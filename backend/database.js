@@ -1,7 +1,7 @@
 const sql = require("mssql");
 
 const config = {
-  user: "menzone_user",                 // user SQL của bạn
+  user: "menzone_user",       // user SQL của bạn
   password: "123456",         // mật khẩu SQL
   server: "DINHTHAI-PC",      // tên máy (đúng như SSMS)
   database: "MenZoneBarber",  // tên database
