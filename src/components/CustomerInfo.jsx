@@ -398,113 +398,122 @@ export default function CustomerInfo({ bookingData, onBack, onEmailSent }) {
   };
 
   return (
-    <section className="py-20 bg-black text-white">
-      <div className="max-w-4xl mx-auto px-10">
-        <h2 className="text-3xl font-bold mb-8">
-          Thông Tin <span className="gold">Khách Hàng</span>
+    <section className="bg-black text-white min-h-[calc(100vh-6rem)] flex items-center">
+      <div className="w-full max-w-6xl mx-auto px-6 lg:px-10 py-8">
+        <h2 className="text-3xl lg:text-4xl font-bold text-center text-[#d4a441] mt-4 mb-12">
+          Thông Tin Khách Hàng
         </h2>
 
-        {/* Booking Summary */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-[#d4a441]">
-            Tóm tắt đặt lịch
-          </h3>
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-gray-400">Dịch vụ:</span>{" "}
-              <span className="text-white">
-                {bookingData?.services?.join(", ") || "---"}
-              </span>
-            </p>
-            <p>
-              <span className="text-gray-400">Ngày:</span>{" "}
-              <span className="text-white">{bookingData?.date || "---"}</span>
-            </p>
-            <p>
-              <span className="text-gray-400">Giờ:</span>{" "}
-              <span className="text-white">{bookingData?.time || "---"}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Form */}
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Họ và tên <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={form.fullName}
-              onChange={handleFullNameChange}
-              className={`w-full px-4 py-3 bg-zinc-800 border rounded-lg text-white focus:outline-none focus:border-[#d4a441] ${
-                errors.fullName ? "border-red-500" : "border-zinc-700"
-              }`}
-              placeholder="Nhập họ và tên"
-            />
-            {errors.fullName && (
-              <p className="text-red-500 text-sm mt-1">{errors.fullName}</p>
-            )}
+        {/* Layout 2 cột: trái = tóm tắt, phải = form */}
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8 lg:gap-12">
+          {/* Booking Summary */}
+          <div className="w-full lg:w-[42%] max-w-md">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-md px-6 py-6 text-sm leading-relaxed">
+              <h3 className="text-base lg:text-lg font-semibold mb-4 text-[#d4a441]">
+                Tóm tắt đặt lịch
+              </h3>
+              <div className="space-y-2">
+                <p>
+                  <span className="text-gray-400">Dịch vụ:</span>{" "}
+                  <span className="text-white">
+                    {bookingData?.services?.join(", ") || "---"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-400">Ngày:</span>{" "}
+                  <span className="text-white">
+                    {bookingData?.date || "---"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-400">Giờ:</span>{" "}
+                  <span className="text-white">
+                    {bookingData?.time || "---"}
+                  </span>
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Số điện thoại <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="tel"
-              value={form.phone}
-              onChange={handlePhoneChange}
-              className={`w-full px-4 py-3 bg-zinc-800 border rounded-lg text-white focus:outline-none focus:border-[#d4a441] ${
-                errors.phone ? "border-red-500" : "border-zinc-700"
-              }`}
-              placeholder="0901234567 hoặc +84901234567"
-            />
-            {errors.phone && (
-              <p className="text-red-500 text-sm mt-1">{errors.phone}</p>
-            )}
-          </div>
+          {/* Form */}
+          <div className="w-full lg:w-[50%] space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Họ và tên <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={form.fullName}
+                onChange={handleFullNameChange}
+                className={`w-full h-[48px] px-4 bg-zinc-800 border rounded-md text-white text-base placeholder:text-zinc-500 focus:outline-none focus:border-[#d4a441] ${
+                  errors.fullName ? "border-red-500" : "border-zinc-700"
+                }`}
+                placeholder="Nhập họ và tên"
+              />
+              {errors.fullName && (
+                <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>
+              )}
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Email <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={handleEmailChange}
-              onBlur={handleEmailBlur}
-              className={`w-full px-4 py-3 bg-zinc-800 border rounded-lg text-white focus:outline-none ${
-                errors.email 
-                  ? "border-red-500 focus:border-red-500" 
-                  : "border-zinc-700 focus:border-[#d4a441]"
-              }`}
-              placeholder="example@gmail.com"
-            />
-            {errors.email && (
-              <p className="text-red-500 text-xs mt-1">{errors.email}</p>
-            )}
-            <p className="text-gray-400 text-xs mt-1">
-              Chúng tôi sẽ gửi email xác nhận đến địa chỉ này
-            </p>
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Số điện thoại <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={handlePhoneChange}
+                className={`w-full h-[48px] px-4 bg-zinc-800 border rounded-md text-white text-base placeholder:text-zinc-500 focus:outline-none focus:border-[#d4a441] ${
+                  errors.phone ? "border-red-500" : "border-zinc-700"
+                }`}
+                placeholder="0901234567 hoặc +84901234567"
+              />
+              {errors.phone && (
+                <p className="text-red-500 text-xs mt-1">{errors.phone}</p>
+              )}
+            </div>
 
-          <div className="flex gap-4 pt-4">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-1 px-6 py-3 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors font-medium"
-            >
-              Quay lại
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading || !isFormValid}
-              className="flex-1 px-6 py-3 bg-[#d4a441] text-black rounded-lg hover:bg-[#c49431] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Đang xử lý..." : "Tiếp tục"}
-            </button>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Email <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={handleEmailChange}
+                onBlur={handleEmailBlur}
+                className={`w-full h-[48px] px-4 bg-zinc-800 border rounded-md text-white text-base placeholder:text-zinc-500 focus:outline-none ${
+                  errors.email
+                    ? "border-red-500 focus:border-red-500"
+                    : "border-zinc-700 focus:border-[#d4a441]"
+                }`}
+                placeholder="example@gmail.com"
+              />
+              {errors.email && (
+                <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+              )}
+              <p className="text-gray-400 text-xs mt-2 italic">
+                Chúng tôi sẽ gửi email xác nhận đến địa chỉ này
+              </p>
+            </div>
+            {/* Buttons */}
+            <div className="flex justify-end gap-4 pt-6 lg:pt-8">
+              <button
+                type="button"
+                onClick={onBack}
+                className="px-6 h-[45px] bg-zinc-800 text-white rounded-md hover:bg-zinc-700 transition-colors font-medium text-sm lg:text-base"
+              >
+                Quay lại
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading || !isFormValid}
+                className="px-8 h-[45px] bg-[#d4a441] text-black rounded-md hover:bg-[#c49431] transition-colors font-semibold text-sm lg:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? "Đang xử lý..." : "Tiếp tục"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

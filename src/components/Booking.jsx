@@ -15,6 +15,26 @@ const times = [
   "19:00","19:30","20:00",
 ];
 
+// Helper: tạo đối tượng Date từ ngày (YYYY-MM-DD) và giờ (HH:mm) theo giờ local
+const createDateTime = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr) return null;
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = timeStr.split(":").map(Number);
+  if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) {
+    return null;
+  }
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+};
+
+// Helper: kiểm tra slot có sớm hơn (now + 1h) không
+const isBeforeOneHourFromNow = (dateStr, timeStr) => {
+  const slot = createDateTime(dateStr, timeStr);
+  if (!slot) return false;
+  const now = new Date();
+  const minAllowed = new Date(now.getTime() + 60 * 60 * 1000);
+  return slot < minAllowed;
+};
+
 export default function Booking({ onNext, disabled = false, initialData = null }) {
   const navigate = useNavigate();
   const [selectedServices, setSelectedServices] = useState([]);
@@ -98,6 +118,12 @@ export default function Booking({ onNext, disabled = false, initialData = null }
         return;
       }
 
+      // Validation thời gian thực: chỉ cho phép đặt sau thời điểm hiện tại ít nhất 1 giờ
+      if (isBeforeOneHourFromNow(currentDate, currentTime)) {
+        alert("Thời gian đặt lịch phải sau thời điểm hiện tại ít nhất 1 giờ. Vui lòng chọn lại.");
+        return;
+      }
+
       // Tạo bookingData từ state hiện tại
       const bookingData = {
         services: currentServices.map(s => s.name),
@@ -113,14 +139,25 @@ export default function Booking({ onNext, disabled = false, initialData = null }
       // Gọi onNext với flushSync để force immediate state update
       if (onNext && typeof onNext === "function") {
         localStorage.setItem("bookingData", JSON.stringify(bookingData));
-        
+
         // Use flushSync to force immediate state update, bypassing React batching
         flushSync(() => {
           console.log("handleConfirm: calling onNext with bookingData:", bookingData);
           onNext(bookingData);
         });
-        
+
         console.log("handleConfirm: onNext call completed");
+
+        // Sau khi chuyển sang bước tiếp theo (trang /booking hoặc form khách hàng),
+        // luôn đưa viewport về đầu trang để không bị giữ lại vị trí scroll cũ.
+        const scrollToTop = () => {
+          window.scrollTo(0, 0);
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+        };
+        // Gọi ngay và gọi lại trong frame tiếp theo để chắc chắn ghi đè mọi auto-scroll khác
+        scrollToTop();
+        requestAnimationFrame(scrollToTop);
       } else {
         // Fallback: Nếu không có onNext (trang Home), lưu và navigate
         console.warn("handleConfirm: onNext not provided, falling back to navigate('/booking')");
@@ -134,12 +171,17 @@ export default function Booking({ onNext, disabled = false, initialData = null }
   };
 
   return (
-    <section id="booking" className={`py-20 bg-black ${disabled ? "pointer-events-none opacity-50" : ""}`}>
-      <div className="max-w-7xl mx-auto px-10">
+    <section
+      id="booking"
+      className={`pt-2 pb-10 bg-black ${
+        disabled ? "pointer-events-none opacity-50" : ""
+      }`}
+    >
+      <div className="max-w-5xl mx-auto px-6">
 
         {/* 1. Chọn dịch vụ */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-semibold mb-8">
+        <div className="mb-10">
+          <h3 className="text-xl lg:text-2xl font-semibold mb-6">
             1. Chọn Dịch Vụ (có thể chọn nhiều)
           </h3>
 
@@ -151,7 +193,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
                 <div
                   key={s.name}
                   onClick={() => !disabled && toggleService(s)}
-                  className={`relative border p-8 transition-all
+                  className={`relative border p-6 transition-all
                     ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
                     ${active ? "border-[#d4a441]" : "border-white/10"}
                     ${!disabled ? "hover:border-[#d4a441]" : ""}`}
@@ -163,9 +205,15 @@ export default function Booking({ onNext, disabled = false, initialData = null }
                     </div>
                   )}
 
-                  <h4 className="text-xl font-semibold mb-2">{s.name}</h4>
-                  <p className="gold mb-1">{s.price.toLocaleString()}đ</p>
-                  <p className="text-gray-500 text-sm">{s.duration} phút</p>
+                  <h4 className="text-lg lg:text-xl font-semibold mb-1.5">
+                    {s.name}
+                  </h4>
+                  <p className="gold mb-0.5 text-sm lg:text-base">
+                    {s.price.toLocaleString()}đ
+                  </p>
+                  <p className="text-gray-500 text-xs lg:text-sm">
+                    {s.duration} phút
+                  </p>
                 </div>
               );
             })}
@@ -173,9 +221,11 @@ export default function Booking({ onNext, disabled = false, initialData = null }
         </div>
 
         {/* 2. Chọn ngày */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-semibold mb-8">2. Chọn Ngày</h3>
-          <div className="flex items-center gap-2">
+        <div className="mb-10">
+          <h3 className="text-xl lg:text-2xl font-semibold mb-6">
+            2. Chọn Ngày
+          </h3>
+          <div className="flex items-center gap-2 max-w-3xl mx-auto">
             <input
               ref={dateRef}
               id="booking-date-input"
@@ -197,9 +247,12 @@ export default function Booking({ onNext, disabled = false, initialData = null }
                 e.stopPropagation();
               }}
               disabled={disabled}
+              min={new Date().toISOString().split("T")[0]}
               aria-label="Chọn ngày đặt lịch"
               title="Chọn ngày đặt lịch"
-              className={`flex-1 bg-black border border-white/20 px-6 py-4 text-white ${disabled ? "cursor-not-allowed opacity-50" : "cursor-text"}`}
+              className={`flex-1 bg-black border border-white/20 px-4 py-3 text-sm lg:text-base text-white text-center ${
+                disabled ? "cursor-not-allowed opacity-50" : "cursor-text"
+              }`}
             />
             <button
               type="button"
@@ -207,7 +260,9 @@ export default function Booking({ onNext, disabled = false, initialData = null }
               disabled={disabled}
               aria-label="Mở lịch chọn ngày"
               title="Mở lịch chọn ngày"
-              className={`px-4 py-4 border border-white/20 text-white hover:border-[#d4a441] transition-colors ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+              className={`px-3 py-3 border border-white/20 text-white hover:border-[#d4a441] transition-colors ${
+                disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+              }`}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -228,56 +283,69 @@ export default function Booking({ onNext, disabled = false, initialData = null }
         </div>
 
         {/* 3. Chọn giờ */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-semibold mb-8">3. Chọn Giờ</h3>
+        <div className="mb-10">
+          <h3 className="text-xl lg:text-2xl font-semibold mb-6">
+            3. Chọn Giờ
+          </h3>
 
           <div className="grid grid-cols-4 md:grid-cols-7 gap-4">
-            {times.map((t) => (
-              <button
-                key={t}
-                onClick={() => !disabled && setSelectedTime(t)}
-                disabled={disabled}
-                className={`border px-4 py-3 text-sm transition
+            {times.map((t) => {
+              const slotDisabled = isBeforeOneHourFromNow(selectedDate, t);
+              return (
+                <button
+                  key={t}
+                  onClick={() =>
+                    !disabled && !slotDisabled && setSelectedTime(t)
+                  }
+                  disabled={disabled || slotDisabled}
+                  className={`border px-3 py-2 text-xs lg:text-sm transition
                   ${
-                    selectedTime === t
+                    selectedTime === t && !slotDisabled
                       ? "bg-[#d4a441] text-black"
                       : "border-white/20 text-white"
                   }
-                  ${disabled ? "cursor-not-allowed opacity-50" : "hover:border-[#d4a441]"}`}
-              >
-                {t}
-              </button>
-            ))}
+                  ${
+                    disabled || slotDisabled
+                      ? "cursor-not-allowed opacity-40"
+                      : "hover:border-[#d4a441]"
+                  }`}
+                >
+                  {t}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Thông tin */}
-        <div className="border border-[#d4a441]/40 p-10">
-          <h3 className="text-xl font-semibold mb-6">Thông Tin Đặt Lịch</h3>
+        <div className="border border-[#d4a441]/40 p-6">
+          <h3 className="text-lg lg:text-xl font-semibold mb-4">
+            Thông Tin Đặt Lịch
+          </h3>
 
-          <p className="mb-2">
+          <p className="mb-1.5 text-sm lg:text-base">
             <span className="text-gray-400">Dịch vụ:</span>{" "}
             <span className="gold">
               {selectedServices.map(s => s.name).join(", ") || "---"}
             </span>
           </p>
 
-          <p className="mb-2">
+          <p className="mb-1.5 text-sm lg:text-base">
             <span className="text-gray-400">Ngày:</span>{" "}
             <span className="gold">{selectedDate || "---"}</span>
           </p>
 
-          <p className="mb-2">
+          <p className="mb-1.5 text-sm lg:text-base">
             <span className="text-gray-400">Giờ:</span>{" "}
             <span className="gold">{selectedTime || "---"}</span>
           </p>
 
-          <p className="mb-2">
+          <p className="mb-1.5 text-sm lg:text-base">
             <span className="text-gray-400">Tổng thời gian:</span>{" "}
             <span className="gold">{totalTime} phút</span>
           </p>
 
-          <p className="mb-8">
+          <p className="mb-6 text-sm lg:text-base">
             <span className="text-gray-400">Tổng chi phí:</span>{" "}
             <span className="gold">{totalPrice.toLocaleString()}đ</span>
           </p>
@@ -304,7 +372,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
                 e.stopPropagation();
               }
             }}
-            className={`w-full py-5 font-semibold tracking-widest transition
+            className={`w-full py-4 text-sm lg:text-base font-semibold tracking-[0.2em] transition
               ${
                 isComplete && !disabled
                   ? "bg-[#d4a441] text-black hover:brightness-110"

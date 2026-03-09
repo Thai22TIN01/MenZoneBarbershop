@@ -18,16 +18,33 @@ export default function BookingPage() {
   // Ref để track xem đã mount lần đầu chưa (chỉ restore khi mount lần đầu)
   const hasMountedRef = useRef(false);
 
-  // Scroll to booking heading when navigating to /booking page
+  // Đảm bảo khi vào trang /booking luôn ở đúng đầu trang, không bị giữ lại vị trí scroll cũ
   useEffect(() => {
     if (location.pathname === "/booking") {
-      // Wait for component to render, then scroll to heading
-      setTimeout(() => {
-        const heading = document.getElementById("booking-heading");
-        if (heading) {
-          heading.scrollIntoView({ behavior: "smooth", block: "start" });
+      // Tắt cơ chế tự restore scroll của trình duyệt cho lần render này
+      const prevScrollRestoration = window.history.scrollRestoration;
+      if ("scrollRestoration" in window.history) {
+        window.history.scrollRestoration = "manual";
+      }
+
+      // Đặt lại scroll về top, áp dụng cho mọi trường hợp
+      const scrollToTop = () => {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      };
+
+      // Gọi ngay khi mount
+      scrollToTop();
+      // Gọi lại sau một frame để "đè" lên mọi auto-scroll khác (nếu có)
+      requestAnimationFrame(scrollToTop);
+
+      // Khôi phục lại cấu hình cũ khi rời trang
+      return () => {
+        if ("scrollRestoration" in window.history) {
+          window.history.scrollRestoration = prevScrollRestoration;
         }
-      }, 300);
+      };
     }
   }, [location.pathname]);
 
@@ -350,11 +367,14 @@ export default function BookingPage() {
     <div className="pt-24 bg-black text-white min-h-screen">
       {/* Booking component LUÔN render, chỉ ẩn bằng CSS khi không ở step booking */}
       <div className={currentStep !== "booking" ? "hidden" : ""}>
-        <div className="max-w-7xl mx-auto px-10 mb-12">
-          <h1 id="booking-heading" className="text-4xl font-bold mb-4">
+        <div className="max-w-5xl mx-auto px-6 mb-4">
+          <h1
+            id="booking-heading"
+            className="text-3xl lg:text-4xl font-bold mb-3 tracking-tight"
+          >
             Đặt Lịch <span className="gold">Cắt Tóc</span>
           </h1>
-          <p className="text-gray-400">
+          <p className="text-gray-400 text-sm lg:text-base max-w-3xl">
             Vui lòng chọn dịch vụ, ngày và giờ phù hợp để chúng tôi phục vụ bạn tốt nhất.
           </p>
         </div>

@@ -1,19 +1,22 @@
-require("dotenv").config();
 const sql = require("mssql");
 
-const dbConfig = {
-  user: process.env.DB_USER || "sa", // user SQL của bạn
-  password: process.env.DB_PASSWORD || "MyStrongPass123", // mật khẩu SQL
-  server: process.env.DB_SERVER || "localhost", // tên máy (đúng như SSMS)
-  database: process.env.DB_DATABASE || "MenZoneBarber", // tên database
+const config = {
+  user: "menzone_user",                 // user SQL của bạn
+  password: "123456",         // mật khẩu SQL
+  server: "DINHTHAI-PC",      // tên máy (đúng như SSMS)
+  database: "MenZoneBarber",  // tên database
   options: {
     trustServerCertificate: true,
   },
 };
 
+module.exports = async function connectDB() {
+  return sql.connect(config);
+};
+
 async function connectDB() {
   try {
-    const pool = await sql.connect(dbConfig);
+    const pool = await sql.connect(config);
     console.log("✅ Connected to SQL Server");
     return pool;
   } catch (err) {

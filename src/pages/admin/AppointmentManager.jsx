@@ -11,6 +11,13 @@ export default function AppointmentManager() {
       await fetchAppointments();
     };
     fn();
+
+    // Polling để đồng bộ trạng thái với SQL Server (10-15s)
+    const intervalId = setInterval(() => {
+      fetchAppointments();
+    }, 15000);
+
+    return () => clearInterval(intervalId);
   }, []);
 
   const fetchAppointments = async () => {
@@ -25,7 +32,15 @@ export default function AppointmentManager() {
         customerPhone: item.CustomerPhone,
         barberName: "Chưa chọn", // TODO: sau này map từ bảng Barber nếu có BarberId
         time: item.AppointmentTime,
-        status: item.Status,
+        // Chuẩn hóa status từ backend (SQL Server) sang status dùng trong frontend
+        status: (() => {
+          const raw = (item.Status || "").toString().trim().toLowerCase();
+          if (raw === "success" || raw === "confirmed") return "confirmed";
+          if (raw === "cancel" || raw === "cancelled") return "cancelled";
+          if (raw === "completed") return "completed";
+          if (raw === "pending") return "pending";
+          return "pending";
+        })(),
       }));
 
       setAppointments(formatted);
@@ -105,11 +120,15 @@ export default function AppointmentManager() {
       },
       confirmed: {
         label: "Đã xác nhận",
-        className: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+        className: "bg-green-500/20 text-green-400 border-green-500/30",
+      },
+      success: {
+        label: "Đã xác nhận",
+        className: "bg-green-500/20 text-green-400 border-green-500/30",
       },
       completed: {
         label: "Hoàn thành",
-        className: "bg-green-500/20 text-green-400 border-green-500/30",
+        className: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
       },
       cancelled: {
         label: "Đã hủy",
