@@ -2,17 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useLocation } from "react-router-dom";
 
-function formatDateTime(dateTime) {
-  if (!dateTime) return "---";
-  const date = new Date(dateTime);
-  if (Number.isNaN(date.getTime())) return String(dateTime);
-  return date.toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatTime(str) {
+  if (!str) return "---";
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+  if (!match) return str;
+  const [, y, m, d, hh, mm] = match;
+  return `${hh}:${mm} ${d}/${m}/${y}`;
 }
 
 function normalizeServices(raw) {
@@ -126,19 +121,20 @@ export default function MyAppointments() {
               .toLowerCase() === normalizedEmail
         )
         .map((apt) => ({
-          id: apt.Id,
-          customerName: apt.CustomerName,
-          customerEmail: apt.CustomerEmail,
-          customerPhone: apt.CustomerPhone,
-          services: normalizeServices(apt.Services),
-          appointmentTime: apt.AppointmentTime,
-          totalPrice: apt.TotalPrice,
-          totalDuration: apt.TotalDuration,
+            id: apt.Id,
+            customerName: apt.CustomerName,
+            customerEmail: apt.CustomerEmail,
+            customerPhone: apt.CustomerPhone,
+            barberName: apt.BarberName,
+            services: normalizeServices(apt.Services),
+            appointmentTime: apt.AppointmentTime,
+            totalPrice: apt.TotalPrice,
+            totalDuration: apt.TotalDuration,
           status: apt.Status ?? apt.status,
           createdAt: apt.CreatedAt,
         }))
         .sort(
-          (a, b) => new Date(b.appointmentTime) - new Date(a.appointmentTime)
+          (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
         );
 
       setAppointments(mine);
@@ -282,7 +278,7 @@ export default function MyAppointments() {
                         <div className="text-gray-400">
                           Thời gian:{" "}
                           <span className="text-gray-200 font-medium">
-                            {formatDateTime(apt.appointmentTime)}
+                            {formatTime(apt.appointmentTime)}
                           </span>
                         </div>
                         <div className="text-gray-400">
@@ -298,9 +294,15 @@ export default function MyAppointments() {
                           </span>
                         </div>
                         <div className="text-gray-400">
+                          Thợ:{" "}
+                          <span className="text-gray-200 font-medium">
+                            {apt.barberName || "Chưa phân công"}
+                          </span>
+                        </div>
+                        <div className="text-gray-400">
                           Tạo lúc:{" "}
                           <span className="text-gray-200 font-medium">
-                            {formatDateTime(apt.createdAt)}
+                            {formatTime(apt.createdAt)}
                           </span>
                         </div>
                       </div>

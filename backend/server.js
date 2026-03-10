@@ -401,7 +401,7 @@ app.post("/booking", async (req, res) => {
     const finalTotalPrice = totalPrice ? parseFloat(totalPrice) : 0;
     const finalTotalDuration = totalDuration ? parseInt(totalDuration, 10) : 0;
 
-    const appointmentDateTime = new Date(`${date}T${time}`);
+    const appointmentDateTime = `${date} ${time}:00`;
 
     // Kiểm tra trùng lịch: thợ đã có lịch vào thời gian này chưa?
     const conflictCheck = await pool
@@ -964,7 +964,20 @@ app.get("/appointments", async (req, res) => {
     await ensureAppointmentsBarberIdColumn(pool);
 
     const result = await pool.request().query(`
-      SELECT a.*, b.BarberName
+      SELECT
+        a.Id,
+        a.CustomerName,
+        a.CustomerEmail,
+        a.CustomerPhone,
+        a.Services,
+        CONVERT(VARCHAR(19), DATEADD(hour, 7, a.AppointmentTime), 120) AS AppointmentTime,
+        a.TotalPrice,
+        a.TotalDuration,
+        a.Status,
+        a.ConfirmationToken,
+        a.BarberId,
+        CONVERT(VARCHAR(19), DATEADD(hour, 7, a.CreatedAt), 120) AS CreatedAt,
+        b.BarberName
       FROM Appointments a
       LEFT JOIN Barbers b ON a.BarberId = b.Id
       ORDER BY a.CreatedAt DESC
@@ -1241,21 +1254,17 @@ app.get("/api/barbers", async (req, res) => {
           .request()
           .input("barberId", sql.Int, barberId)
           .query(`
-            SELECT AppointmentTime
+            SELECT CONVERT(VARCHAR(19), DATEADD(hour, 7, AppointmentTime), 120) AS AppointmentTime
             FROM Appointments
             WHERE BarberId = @barberId
-              AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(GETDATE() AS DATE)
               AND Status IN ('confirmed', 'success', 'completed')
+              AND DATEADD(hour, 7, AppointmentTime) >= GETDATE()
             ORDER BY AppointmentTime ASC
           `);
         const todayTimes = (aptResult.recordset || []).map((a) => {
           const aptTime = a.AppointmentTime;
           if (aptTime == null) return null;
-          return aptTime instanceof Date
-            ? aptTime.toISOString()
-            : typeof aptTime === "string"
-              ? aptTime.replace(" ", "T")
-              : String(aptTime);
+          return typeof aptTime === "string" ? aptTime : String(aptTime);
         }).filter(Boolean);
         todayAppointmentsByBarber.set(barberId, todayTimes);
       }

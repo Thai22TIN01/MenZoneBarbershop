@@ -188,23 +188,12 @@ export default function BarberManager() {
     const arr = b.todayAppointments ?? b.TodayAppointments ?? [];
     return Array.isArray(arr) ? arr : [];
   };
-  const formatAppointmentTime = (aptTime) => {
-    if (aptTime == null || aptTime === "") return "";
-    try {
-      let dateStr = aptTime;
-      if (typeof aptTime === "string" && aptTime.includes(" ") && !aptTime.includes("T")) {
-        dateStr = aptTime.replace(" ", "T");
-      }
-      const d = aptTime instanceof Date ? aptTime : new Date(dateStr);
-      if (isNaN(d.getTime())) return "";
-      return d.toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
-    } catch {
-      return "";
-    }
+  const formatTime = (str) => {
+    if (!str) return "---";
+    const match = String(str).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+    if (!match) return str;
+    const [, y, m, d, hh, mm] = match;
+    return `${hh}:${mm} ${d}/${m}/${y}`;
   };
 
   return (
@@ -314,11 +303,11 @@ export default function BarberManager() {
                         {getStatusBadge(getBarberStatus(barber))}
                         {(() => {
                           const times = getTodayAppointments(barber)
-                            .map(formatAppointmentTime)
+                            .map(formatTime)
                             .filter(Boolean);
                           return times.length > 0 ? (
                             <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 w-fit">
-                              Có lịch hôm nay ({times.join(", ")})
+                              Có lịch ({times.join(", ")})
                             </span>
                           ) : null;
                         })()}

@@ -51,15 +51,12 @@ export default function AppointmentManager() {
     }
   };
 
-  const formatDateTime = (dateTime) => {
-    const date = new Date(dateTime);
-    return date.toLocaleString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const formatTime = (str) => {
+    if (!str) return "---";
+    const match = str.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+    if (!match) return str;
+    const [, y, m, d, hh, mm] = match;
+    return `${hh}:${mm} ${d}/${m}/${y}`;
   };
 
   const handleStatusChange = async (id, newStatus, appointment) => {
@@ -67,7 +64,7 @@ export default function AppointmentManager() {
     let confirmMessage = "";
     const customerName = appointment?.customerName || "khách hàng";
     const appointmentTime = appointment?.time 
-      ? formatDateTime(appointment.time) 
+      ? formatTime(appointment.time) 
       : "";
 
     // Build personalized confirmation messages as requested
@@ -153,7 +150,15 @@ export default function AppointmentManager() {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = toDateStr(tomorrow);
 
-  const getAptDateStr = (apt) => (apt?.time ? toDateStr(new Date(apt.time)) : "");
+  const getDateFromISO = (iso) => {
+    if (!iso) return "";
+    const match = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return "";
+    const [, y, m, d] = match;
+    return `${y}-${m}-${d}`;
+  };
+
+  const getAptDateStr = (apt) => getDateFromISO(apt?.time);
 
   const filteredAppointments = appointments.filter((apt) => {
     if (filterStatus === "all") return true;
@@ -244,7 +249,7 @@ export default function AppointmentManager() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-zinc-300">
-                        {formatDateTime(appointment.time)}
+                        {formatTime(appointment.time)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
