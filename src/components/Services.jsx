@@ -1,4 +1,22 @@
+import { useState, useEffect } from "react";
+
+const API_SERVICES = "http://localhost:3001/api/services";
+
 export default function Services() {
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(API_SERVICES)
+      .then((res) => res.json())
+      .then((data) => setServices(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error("Error fetching services:", err);
+        setServices([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <section id="services" className="py-32 bg-black">
       <div className="max-w-7xl mx-auto px-10 text-center">
@@ -11,44 +29,33 @@ export default function Services() {
           giúp quý ông luôn tự tin và phong độ.
         </p>
 
-        <div className="grid md:grid-cols-3 gap-10">
-          <div className="border border-white/10 p-10 text-left">
-            <h3 className="text-2xl font-semibold mb-4">Cắt Tóc Nam</h3>
-            <p className="text-gray-400 mb-10">
-              Kiểu tóc phù hợp với khuôn mặt và phong cách riêng
-            </p>
-            <div className="flex justify-between text-sm">
-              <span className="gold text-lg font-semibold">70.000đ</span>
-              <span className="text-gray-500">30 phút</span>
-            </div>
+        {loading ? (
+          <div className="py-12 text-gray-400">Đang tải...</div>
+        ) : (
+          <div className="grid md:grid-cols-3 gap-10">
+            {services.map((service) => (
+              <div
+                key={service.Id ?? service.id}
+                className="border border-white/10 p-10 text-left"
+              >
+                <h3 className="text-2xl font-semibold mb-4">
+                  {service.ServiceName ?? service.serviceName ?? "---"}
+                </h3>
+                <p className="text-gray-400 mb-10">
+                  Dịch vụ chăm sóc tóc chuyên nghiệp
+                </p>
+                <div className="flex justify-between text-sm">
+                  <span className="gold text-lg font-semibold">
+                    {(service.Price ?? service.price ?? 0).toLocaleString("vi-VN")}đ
+                  </span>
+                  <span className="text-gray-500">
+                    {service.Duration ?? service.duration ?? 0} phút
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
-
-          <div className="border border-white/10 p-10 text-left">
-            <h3 className="text-2xl font-semibold mb-4">Uốn Tóc</h3>
-            <p className="text-gray-400 mb-10">
-              Uốn tóc thời trang, giữ nếp lâu và an toàn cho tóc
-            </p>
-            <div className="flex justify-between text-sm">
-              <span className="gold text-lg font-semibold">
-                từ 150.000đ
-              </span>
-              <span className="text-gray-500">60 phút</span>
-            </div>
-          </div>
-
-          <div className="border border-white/10 p-10 text-left">
-            <h3 className="text-2xl font-semibold mb-4">Nhuộm Tóc</h3>
-            <p className="text-gray-400 mb-10">
-              Nhuộm tóc với màu thời trang, thuốc nhuộm an toàn
-            </p>
-            <div className="flex justify-between text-sm">
-              <span className="gold text-lg font-semibold">
-                từ 200.000đ
-              </span>
-              <span className="text-gray-500">60 phút</span>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </section>
   );

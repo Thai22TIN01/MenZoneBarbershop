@@ -347,6 +347,9 @@ export default function CustomerInfo({ bookingData, onBack, onEmailSent }) {
         totalPrice: bookingData.price || 0,
         totalDuration: bookingData.duration || 0,
       };
+      if (bookingData.barberId != null) {
+        bookingPayload.barberId = bookingData.barberId;
+      }
 
       // Create booking via POST /booking
       const response = await axios.post(

@@ -2,11 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { flushSync } from "react-dom";
 
-const services = [
-  { name: "Cắt Tóc Nam", price: 70000, duration: 30 },
-  { name: "Uốn Tóc", price: 150000, duration: 60 },
-  { name: "Nhuộm Tóc", price: 200000, duration: 60 },
-];
+const API_SERVICES = "http://localhost:3001/api/services";
 
 const times = [
   "08:00","08:30","09:00","09:30","10:00","10:30",
@@ -14,6 +10,19 @@ const times = [
   "16:00","16:30","17:00","17:30","18:00","18:30",
   "19:00","19:30","20:00",
 ];
+
+// Danh sách thợ hardcode (Id 1-3: cơ bản, 4-5: trẻ trung)
+const BARBERS = [
+  { id: 1, BarberName: "Nguyễn Hoàng Phong", Phone: "0901234567" },
+  { id: 2, BarberName: "Trần Minh Tuấn", Phone: "0912345678" },
+  { id: 3, BarberName: "Lê Xuân Vũ", Phone: "0923456789" },
+  { id: 4, BarberName: "Nguyễn Minh Quý", Phone: "0934567890" },
+  { id: 5, BarberName: "Trần Minh Hiếu", Phone: "0945678901" },
+];
+const GROUP_TRADITIONAL_IDS = [1, 2, 3];
+const GROUP_YOUTHFUL_IDS = [4, 5];
+
+const pickRandomFromGroup = (ids) => ids[Math.floor(Math.random() * ids.length)];
 
 // Helper: tạo đối tượng Date từ ngày (YYYY-MM-DD) và giờ (HH:mm) theo giờ local
 const createDateTime = (dateStr, timeStr) => {
@@ -26,47 +35,129 @@ const createDateTime = (dateStr, timeStr) => {
   return new Date(year, month - 1, day, hour, minute, 0, 0);
 };
 
-// Helper: kiểm tra slot có sớm hơn (now + 1h) không
-const isBeforeOneHourFromNow = (dateStr, timeStr) => {
-  const slot = createDateTime(dateStr, timeStr);
-  if (!slot) return false;
-  const now = new Date();
-  const minAllowed = new Date(now.getTime() + 60 * 60 * 1000);
-  return slot < minAllowed;
+// Helper: lấy giờ hiện tại theo timezone VN (Asia/Ho_Chi_Minh)
+const getNowInVietnam = () => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? "0";
+  return {
+    year: parseInt(get("year"), 10),
+    month: parseInt(get("month"), 10),
+    day: parseInt(get("day"), 10),
+    hour: parseInt(get("hour"), 10),
+    minute: parseInt(get("minute"), 10),
+  };
+};
+
+// Helper: kiểm tra slot có bị disable không
+// - Nếu ngày chọn KHÔNG phải hôm nay → tất cả giờ enabled
+// - Nếu ngày chọn là hôm nay: min slot = now + 30 phút, làm tròn lên slot 30p tiếp theo
+//   Ví dụ: 15:16 → min 16:00; 15:30 → min 16:00; 15:31→15:59 → min 16:30
+const isTimeSlotDisabled = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr) return false;
+
+  const nowVN = getNowInVietnam();
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [slotHour, slotMinute] = timeStr.split(":").map(Number);
+
+  // Ngày chọn khác hôm nay → không giới hạn
+  if (year !== nowVN.year || month !== nowVN.month || day !== nowVN.day) {
+    return false;
+  }
+
+  // Hôm nay: min slot = now + 30 phút, làm tròn lên slot 30p tiếp theo
+  const currentMinutes = nowVN.hour * 60 + nowVN.minute;
+  const minAllowedMinutes = currentMinutes + 30;
+  const minSlotMinutes = Math.ceil(minAllowedMinutes / 30) * 30;
+
+  const slotMinutes = slotHour * 60 + slotMinute;
+  return slotMinutes < minSlotMinutes;
 };
 
 export default function Booking({ onNext, disabled = false, initialData = null }) {
   const navigate = useNavigate();
+  const [services, setServices] = useState([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
   const [selectedServices, setSelectedServices] = useState([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
+  const [selectedStyleType, setSelectedStyleType] = useState(null);
+  const [selectedBarberId, setSelectedBarberId] = useState(null);
   const dateRef = useRef(null);
+
+  useEffect(() => {
+    fetch(API_SERVICES)
+      .then((res) => res.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setServices(
+          list.map((s) => ({
+            id: s.Id ?? s.id,
+            name: s.ServiceName ?? s.serviceName ?? "",
+            price: parseInt(s.Price ?? s.price, 10) || 0,
+            duration: parseInt(s.Duration ?? s.duration, 10) || 0,
+          }))
+        );
+      })
+      .catch((err) => {
+        console.error("Error fetching services:", err);
+        setServices([]);
+      })
+      .finally(() => setServicesLoading(false));
+  }, []);
+
+  const handleSelectStyle = (type) => {
+    if (disabled) return;
+    const barberId = type === "traditional"
+      ? pickRandomFromGroup(GROUP_TRADITIONAL_IDS)
+      : pickRandomFromGroup(GROUP_YOUTHFUL_IDS);
+    setSelectedStyleType(type);
+    setSelectedBarberId(barberId);
+  };
 
   // Hydrate state from initialData prop when component mounts or when returning to booking step
   useEffect(() => {
     if (initialData) {
-      // Map service names back to service objects
-      if (initialData.services && Array.isArray(initialData.services)) {
+      // Map service names back to service objects (requires services to be loaded)
+      if (initialData.services && Array.isArray(initialData.services) && services.length > 0) {
         const hydratedServices = initialData.services
-          .map(serviceName => services.find(s => s.name === serviceName))
-          .filter(Boolean); // Remove any undefined values
+          .map((serviceName) => services.find((s) => s.name === serviceName))
+          .filter(Boolean);
         setSelectedServices(hydratedServices);
       }
-      
-      if (initialData.date) {
-        setSelectedDate(initialData.date);
-      }
-      
-      if (initialData.time) {
-        setSelectedTime(initialData.time);
+      if (initialData.date) setSelectedDate(initialData.date);
+      if (initialData.time) setSelectedTime(initialData.time);
+      if (initialData.barberId != null) {
+        setSelectedBarberId(initialData.barberId);
+        const bid = initialData.barberId;
+        setSelectedStyleType(
+          GROUP_TRADITIONAL_IDS.includes(bid) ? "traditional" :
+          GROUP_YOUTHFUL_IDS.includes(bid) ? "youthful" : null
+        );
       }
     } else {
-      // Reset state when initialData is null/undefined
       setSelectedServices([]);
       setSelectedDate("");
       setSelectedTime("");
+      setSelectedStyleType(null);
+      setSelectedBarberId(null);
     }
-  }, [initialData]);
+  }, [initialData, services]);
+
+  // Khi đổi ngày: clear giờ đã chọn nếu giờ đó không còn hợp lệ (vd: đổi sang hôm nay)
+  useEffect(() => {
+    if (selectedDate && selectedTime && isTimeSlotDisabled(selectedDate, selectedTime)) {
+      setSelectedTime("");
+    }
+  }, [selectedDate]);
 
   const toggleService = (service) => {
     setSelectedServices((prev) =>
@@ -81,7 +172,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
 
   // isComplete chỉ dùng để hiển thị UI (disabled state), không dùng để validation
   const isComplete =
-    selectedServices.length > 0 && selectedDate && selectedTime;
+    selectedServices.length > 0 && selectedDate && selectedTime && selectedBarberId != null;
 
   const handleDatePickerOpen = (e) => {
     if (!disabled) {
@@ -111,16 +202,17 @@ export default function Booking({ onNext, disabled = false, initialData = null }
       const hasServices = currentServices.length > 0;
       const hasDate = currentDate && currentDate.trim() !== "";
       const hasTime = currentTime && currentTime.trim() !== "";
+      const hasBarber = selectedBarberId != null;
 
       // Validation - chỉ return nếu thiếu dữ liệu
-      if (!hasServices || !hasDate || !hasTime) {
-        alert("Vui lòng điền đầy đủ thông tin đặt lịch");
+      if (!hasServices || !hasDate || !hasTime || !hasBarber) {
+        alert("Vui lòng điền đầy đủ thông tin đặt lịch (dịch vụ, ngày, giờ, thợ cắt tóc)");
         return;
       }
 
-      // Validation thời gian thực: chỉ cho phép đặt sau thời điểm hiện tại ít nhất 1 giờ
-      if (isBeforeOneHourFromNow(currentDate, currentTime)) {
-        alert("Thời gian đặt lịch phải sau thời điểm hiện tại ít nhất 1 giờ. Vui lòng chọn lại.");
+      // Validation thời gian thực: giờ phải >= now + 30 phút (phút=0) hoặc + 1 tiếng (phút>0)
+      if (isTimeSlotDisabled(currentDate, currentTime)) {
+        alert("Thời gian đặt lịch phải sau thời điểm hiện tại ít nhất 30 phút (giờ chẵn) hoặc 1 tiếng (giờ lẻ). Vui lòng chọn lại.");
         return;
       }
 
@@ -131,6 +223,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
         time: currentTime,
         duration: currentTotalTime,
         price: currentTotalPrice,
+        barberId: selectedBarberId,
       };
 
       console.log("handleConfirm: bookingData created:", bookingData);
@@ -185,6 +278,9 @@ export default function Booking({ onNext, disabled = false, initialData = null }
             1. Chọn Dịch Vụ (có thể chọn nhiều)
           </h3>
 
+          {servicesLoading ? (
+            <div className="py-8 text-center text-gray-400">Đang tải dịch vụ...</div>
+          ) : (
           <div className="grid md:grid-cols-3 gap-8">
             {services.map((s) => {
               const active = selectedServices.find(x => x.name === s.name);
@@ -218,6 +314,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
               );
             })}
           </div>
+          )}
         </div>
 
         {/* 2. Chọn ngày */}
@@ -290,7 +387,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
 
           <div className="grid grid-cols-4 md:grid-cols-7 gap-4">
             {times.map((t) => {
-              const slotDisabled = isBeforeOneHourFromNow(selectedDate, t);
+              const slotDisabled = isTimeSlotDisabled(selectedDate, t);
               return (
                 <button
                   key={t}
@@ -302,16 +399,81 @@ export default function Booking({ onNext, disabled = false, initialData = null }
                   ${
                     selectedTime === t && !slotDisabled
                       ? "bg-[#d4a441] text-black"
-                      : "border-white/20 text-white"
+                      : slotDisabled
+                        ? "border-white/10 text-gray-500 bg-gray-700 opacity-50 cursor-not-allowed"
+                        : "border-white/20 text-white"
                   }
                   ${
                     disabled || slotDisabled
-                      ? "cursor-not-allowed opacity-40"
+                      ? "cursor-not-allowed opacity-50"
                       : "hover:border-[#d4a441]"
                   }`}
                 >
                   {t}
                 </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 4. Chọn kiểu tóc → thợ ngẫu nhiên */}
+        <div className="mb-10">
+          <h3 className="text-xl lg:text-2xl font-semibold mb-6">
+            4. Chọn Kiểu Tóc
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <button
+              type="button"
+              onClick={() => handleSelectStyle("traditional")}
+              disabled={disabled}
+              className={`w-full py-6 px-6 text-center border-2 transition-all rounded-lg
+                ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
+                ${selectedStyleType === "traditional"
+                  ? "border-yellow-500 bg-yellow-500 text-black"
+                  : "border-white/20 text-white hover:border-[#d4a441]/60"}`}
+            >
+              <span className="block text-base lg:text-lg font-semibold">
+                Cơ bản, truyền thống
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectStyle("youthful")}
+              disabled={disabled}
+              className={`w-full py-6 px-6 text-center border-2 transition-all rounded-lg
+                ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
+                ${selectedStyleType === "youthful"
+                  ? "border-yellow-500 bg-yellow-500 text-black"
+                  : "border-white/20 text-white hover:border-[#d4a441]/60"}`}
+            >
+              <span className="block text-base lg:text-lg font-semibold">
+                Trẻ trung, năng động
+              </span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {BARBERS.map((barber) => {
+              const name = barber.BarberName ?? barber.name ?? "";
+              const phone = barber.Phone ?? barber.phone ?? "";
+              const isSelected = selectedBarberId === barber.id;
+              return (
+                <div
+                  key={barber.id}
+                  className={`relative border p-4 transition-all
+                    ${isSelected ? "border-[#d4a441] bg-[#d4a441]/10" : "border-white/10 opacity-70"}`}
+                >
+                  {isSelected && (
+                    <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[#d4a441] flex items-center justify-center">
+                      <span className="text-black text-xs">✓</span>
+                    </div>
+                  )}
+                  <h4 className="text-sm lg:text-base font-semibold text-white mb-1">
+                    {name}
+                  </h4>
+                  <p className="text-gray-400 text-xs">{phone}</p>
+                </div>
               );
             })}
           </div>
@@ -338,6 +500,17 @@ export default function Booking({ onNext, disabled = false, initialData = null }
           <p className="mb-1.5 text-sm lg:text-base">
             <span className="text-gray-400">Giờ:</span>{" "}
             <span className="gold">{selectedTime || "---"}</span>
+          </p>
+
+          <p className="mb-1.5 text-sm lg:text-base">
+            <span className="text-gray-400">Thợ cắt tóc:</span>{" "}
+            <span className="gold">
+              {selectedBarberId != null
+                ? (BARBERS.find((b) => b.id === selectedBarberId)?.BarberName ??
+                    BARBERS.find((b) => b.id === selectedBarberId)?.name ??
+                    "---")
+                : "---"}
+            </span>
           </p>
 
           <p className="mb-1.5 text-sm lg:text-base">

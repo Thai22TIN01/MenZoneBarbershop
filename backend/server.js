@@ -318,6 +318,41 @@ app.post("/api/booking/check-verification", async (req, res) => {
   }
 });
 
+// Helper: đảm bảo cột BarberId tồn tại trong Appointments
+async function ensureAppointmentsBarberIdColumn(pool) {
+  try {
+    const check = await pool.request().query(`
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('Appointments') AND name = 'BarberId'
+    `);
+    if (check.recordset.length === 0) {
+      await pool.request().query(`
+        ALTER TABLE Appointments ADD BarberId INT NULL
+      `);
+      console.log("✅ Appointments.BarberId column added.");
+    }
+  } catch (err) {
+    console.error("❌ Error ensuring BarberId column:", err.message);
+  }
+}
+
+// Helper: lấy thợ active ngẫu nhiên để assign cho appointment
+async function getRandomActiveBarberId(pool) {
+  try {
+    await ensureBarbersTable();
+    const barbersResult = await pool.request().query(`
+      SELECT Id FROM Barbers WHERE Status = 'Active'
+    `);
+    const activeBarbers = barbersResult.recordset || [];
+    if (activeBarbers.length === 0) return null;
+    const idx = Math.floor(Math.random() * activeBarbers.length);
+    return activeBarbers[idx].Id;
+  } catch (err) {
+    console.error("❌ Error getting random barber:", err.message);
+    return null;
+  }
+}
+
 // ===== API TẠO ĐẶT LỊCH + GỬI MAIL XÁC NHẬN THẬT =====
 app.post("/booking", async (req, res) => {
   console.log("📥 POST /booking:", req.body);
@@ -331,6 +366,7 @@ app.post("/booking", async (req, res) => {
     time,
     totalPrice,
     totalDuration,
+    barberId: barberIdFromBody,
   } = req.body;
 
   if (
@@ -350,6 +386,11 @@ app.post("/booking", async (req, res) => {
 
   try {
     const pool = await connectDB();
+    await ensureAppointmentsBarberIdColumn(pool);
+    let barberId = barberIdFromBody != null ? parseInt(barberIdFromBody, 10) : null;
+    if (!barberId || isNaN(barberId)) {
+      barberId = await getRandomActiveBarberId(pool);
+    }
 
     const confirmationToken = crypto.randomBytes(32).toString("hex");
 
@@ -362,6 +403,23 @@ app.post("/booking", async (req, res) => {
 
     const appointmentDateTime = new Date(`${date}T${time}`);
 
+    // Kiểm tra trùng lịch: thợ đã có lịch vào thời gian này chưa?
+    const conflictCheck = await pool
+      .request()
+      .input("barberId", sql.Int, barberId)
+      .input("appointmentTime", sql.DateTime, appointmentDateTime)
+      .query(`
+        SELECT Id FROM Appointments
+        WHERE BarberId = @barberId
+          AND AppointmentTime = @appointmentTime
+          AND Status NOT IN ('cancelled')
+      `);
+    if (conflictCheck.recordset.length > 0) {
+      return res.status(400).json({
+        message: "Thợ đã có lịch vào thời gian này",
+      });
+    }
+
     const result = await pool
       .request()
       .input("customerName", sql.NVarChar(100), customerName)
@@ -373,12 +431,13 @@ app.post("/booking", async (req, res) => {
       .input("totalDuration", sql.Int, finalTotalDuration)
       .input("status", sql.VarChar(20), "pending")
       .input("confirmationToken", sql.VarChar(64), confirmationToken)
+      .input("barberId", sql.Int, barberId)
       .query(`
         INSERT INTO Appointments
-        (CustomerName, CustomerEmail, CustomerPhone, Services, AppointmentTime, TotalPrice, TotalDuration, Status, ConfirmationToken)
+        (CustomerName, CustomerEmail, CustomerPhone, Services, AppointmentTime, TotalPrice, TotalDuration, Status, ConfirmationToken, BarberId)
         OUTPUT INSERTED.Id
         VALUES
-        (@customerName, @customerEmail, @customerPhone, @services, @appointmentTime, @totalPrice, @totalDuration, @status, @confirmationToken)
+        (@customerName, @customerEmail, @customerPhone, @services, @appointmentTime, @totalPrice, @totalDuration, @status, @confirmationToken, @barberId)
       `);
 
     const appointmentId = result.recordset[0].Id;
@@ -819,15 +878,96 @@ app.get('/api/vnpay/vnpay_return', async function (req, res, next) {
   }
 });
 
+// ===== API REVENUE =====
+app.get("/api/revenue/today", async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().query(`
+      SELECT ISNULL(SUM(TotalPrice), 0) as revenue
+      FROM Appointments
+      WHERE Status = 'completed'
+        AND CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+    `);
+    const revenue = parseFloat(result.recordset[0]?.revenue ?? 0) || 0;
+    res.json({ revenue: Math.round(revenue) });
+  } catch (err) {
+    console.error("❌ Error fetching revenue today:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
+
+app.get("/api/revenue/month", async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().query(`
+      SELECT ISNULL(SUM(TotalPrice), 0) as revenue
+      FROM Appointments
+      WHERE Status = 'completed'
+        AND MONTH(AppointmentTime) = MONTH(GETDATE())
+        AND YEAR(AppointmentTime) = YEAR(GETDATE())
+    `);
+    const revenue = parseFloat(result.recordset[0]?.revenue ?? 0) || 0;
+    res.json({ revenue: Math.round(revenue) });
+  } catch (err) {
+    console.error("❌ Error fetching revenue month:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
+
+// ===== API DASHBOARD STATS =====
+app.get("/api/dashboard/stats", async (req, res) => {
+  try {
+    const pool = await connectDB();
+
+    const totalResult = await pool.request().query(`
+      SELECT COUNT(*) as total
+      FROM Appointments
+      WHERE CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+    `);
+    const totalToday = totalResult.recordset[0]?.total ?? 0;
+
+    const completedResult = await pool.request().query(`
+      SELECT COUNT(*) as completed
+      FROM Appointments
+      WHERE Status IN ('completed', 'success')
+        AND CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+    `);
+    const completedToday = completedResult.recordset[0]?.completed ?? 0;
+
+    const revenueResult = await pool.request().query(`
+      SELECT ISNULL(SUM(TotalPrice), 0) as revenue
+      FROM Appointments
+      WHERE Status IN ('completed', 'success')
+        AND CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+    `);
+    const revenueToday = parseFloat(revenueResult.recordset[0]?.revenue ?? 0) || 0;
+
+    res.json({
+      totalToday: Number(totalToday),
+      completedToday: Number(completedToday),
+      revenueToday: Math.round(revenueToday),
+    });
+  } catch (err) {
+    console.error("❌ Error fetching dashboard stats:", err.message);
+    res.status(500).json({
+      message: "Lỗi server khi tải thống kê",
+      error: err.message || String(err),
+    });
+  }
+});
+
 // ===== API LẤY DANH SÁCH LỊCH HẸN =====
 app.get("/appointments", async (req, res) => {
   try {
     const pool = await connectDB();
+    await ensureBarbersTable();
+    await ensureAppointmentsBarberIdColumn(pool);
 
     const result = await pool.request().query(`
-      SELECT *
-      FROM Appointments
-      ORDER BY CreatedAt DESC
+      SELECT a.*, b.BarberName
+      FROM Appointments a
+      LEFT JOIN Barbers b ON a.BarberId = b.Id
+      ORDER BY a.CreatedAt DESC
     `);
 
     res.json(result.recordset);
@@ -894,7 +1034,368 @@ app.patch("/appointments/:id", async (req, res) => {
   }
 });
 
+// ===== API DỊCH VỤ (SERVICES) =====
+async function ensureServicesTable() {
+  try {
+    const pool = await connectDB();
+    const check = await pool.request().query(`
+      SELECT 1 FROM sys.tables WHERE name = 'Services'
+    `);
+    if (check.recordset.length === 0) {
+      await pool.request().query(`
+        CREATE TABLE Services (
+          Id INT IDENTITY(1,1) PRIMARY KEY,
+          ServiceName NVARCHAR(100) NOT NULL,
+          Price DECIMAL(10,2) NOT NULL DEFAULT 0,
+          Duration INT NOT NULL DEFAULT 0
+        )
+      `);
+      console.log("✅ Services table created.");
+    }
+  } catch (err) {
+    console.error("❌ Error ensuring Services table:", err.message);
+    throw err;
+  }
+}
+
+app.get("/api/services", async (req, res) => {
+  try {
+    await ensureServicesTable();
+    const pool = await connectDB();
+    const result = await pool.request().query(`
+      SELECT Id, ServiceName, Price, Duration
+      FROM Services
+      ORDER BY Id ASC
+    `);
+    const services = (result.recordset || []).map((r) => ({
+      Id: r.Id,
+      ServiceName: r.ServiceName ?? "",
+      Price: r.Price ?? 0,
+      Duration: r.Duration ?? 0,
+    }));
+    res.json(services);
+  } catch (err) {
+    console.error("❌ Error fetching services:", err.message);
+    res.status(500).json({
+      message: "Lỗi server khi tải danh sách dịch vụ",
+      error: err.message || String(err),
+    });
+  }
+});
+
+app.post("/api/services", async (req, res) => {
+  const { ServiceName, Price, Duration } = req.body;
+  if (!ServiceName || ServiceName.toString().trim() === "") {
+    return res.status(400).json({ message: "Thiếu tên dịch vụ" });
+  }
+  const price = parseInt(Price, 10) || 0;
+  const duration = parseInt(Duration, 10) || 0;
+  try {
+    await ensureServicesTable();
+    const pool = await connectDB();
+    const result = await pool
+      .request()
+      .input("ServiceName", sql.NVarChar(100), ServiceName.toString().trim())
+      .input("Price", sql.Int, price)
+      .input("Duration", sql.Int, duration)
+      .query(`
+        INSERT INTO Services (ServiceName, Price, Duration)
+        OUTPUT INSERTED.Id
+        VALUES (@ServiceName, @Price, @Duration)
+      `);
+    const newId = result.recordset[0].Id;
+    res.status(201).json({
+      Id: newId,
+      ServiceName: ServiceName.toString().trim(),
+      Price: price,
+      Duration: duration,
+    });
+  } catch (err) {
+    console.error("❌ Error creating service:", err.message);
+    res.status(500).json({
+      message: "Lỗi server khi thêm dịch vụ",
+      error: err.message || String(err),
+    });
+  }
+});
+
+app.put("/api/services/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ServiceName, Price, Duration } = req.body;
+
+    const serviceId = parseInt(id, 10);
+    if (isNaN(serviceId)) {
+      return res.status(400).json({ message: "ID không hợp lệ" });
+    }
+
+    const pool = await connectDB();
+    await ensureServicesTable();
+
+    const check = await pool.request().input("Id", sql.Int, serviceId).query("SELECT Id FROM Services WHERE Id = @Id");
+    if (check.recordset.length === 0) {
+      return res.status(404).json({ message: "Không tìm thấy dịch vụ" });
+    }
+
+    await pool
+      .request()
+      .input("Id", sql.Int, serviceId)
+      .input("ServiceName", sql.NVarChar(100), (ServiceName ?? "").toString().trim())
+      .input("Price", sql.Int, parseInt(Price, 10) || 0)
+      .input("Duration", sql.Int, parseInt(Duration, 10) || 0)
+      .query(`
+        UPDATE Services
+        SET ServiceName = @ServiceName,
+            Price = @Price,
+            Duration = @Duration
+        WHERE Id = @Id
+      `);
+
+    res.json({
+      message: "Service updated successfully",
+      Id: serviceId,
+      ServiceName: (ServiceName ?? "").toString().trim(),
+      Price: parseInt(Price, 10) || 0,
+      Duration: parseInt(Duration, 10) || 0,
+    });
+  } catch (err) {
+    console.error("❌ Error updating service:", err);
+    res.status(500).json({
+      message: "Lỗi server khi cập nhật dịch vụ",
+      error: err.message || String(err),
+    });
+  }
+});
+
+app.delete("/api/services/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ message: "ID không hợp lệ" });
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().input("id", sql.Int, id).query("DELETE FROM Services WHERE Id = @id");
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: "Không tìm thấy dịch vụ" });
+    }
+    res.json({ message: "Xóa thành công" });
+  } catch (err) {
+    console.error("❌ Error deleting service:", err.message);
+    res.status(500).json({
+      message: "Lỗi server khi xóa dịch vụ",
+      error: err.message || String(err),
+    });
+  }
+});
+
+// ===== API BARBERS =====
+// Khởi tạo bảng Barbers nếu chưa tồn tại
+async function ensureBarbersTable() {
+  try {
+    const pool = await connectDB();
+    const check = await pool.request().query(`
+      SELECT 1 FROM sys.tables WHERE name = 'Barbers'
+    `);
+    if (check.recordset.length === 0) {
+      await pool.request().query(`
+        CREATE TABLE Barbers (
+          Id INT IDENTITY(1,1) PRIMARY KEY,
+          BarberName NVARCHAR(100) NOT NULL,
+          Phone VARCHAR(20) NOT NULL,
+          Status VARCHAR(20) NOT NULL DEFAULT 'Active',
+          Image NVARCHAR(MAX) NULL,
+          CreatedAt DATETIME DEFAULT GETDATE()
+        )
+      `);
+      console.log("✅ Barbers table created.");
+    }
+  } catch (err) {
+    console.error("❌ Error ensuring Barbers table:", err.message);
+    console.error("Stack:", err.stack);
+    throw err;
+  }
+}
+
+// GET /api/barbers - Lấy danh sách thợ cắt tóc
+app.get("/api/barbers", async (req, res) => {
+  try {
+    await ensureBarbersTable();
+    const pool = await connectDB();
+    if (!pool) {
+      console.error("❌ GET /api/barbers: pool is null/undefined");
+      return res.status(500).json({ message: "Lỗi server", error: "Không kết nối được database" });
+    }
+    await ensureAppointmentsBarberIdColumn(pool);
+    console.log("✅ GET /api/barbers: pool connected, executing query...");
+    let recordset = [];
+    const todayAppointmentsByBarber = new Map();
+
+    try {
+      const barbersResult = await pool.request().query(`
+        SELECT Id, BarberName, Phone, Status FROM Barbers ORDER BY Id ASC
+      `);
+      recordset = barbersResult.recordset || [];
+
+      const aptResult = await pool.request().query(`
+        SELECT BarberId, AppointmentTime
+        FROM Appointments
+        WHERE CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+          AND Status IN ('confirmed', 'success', 'completed')
+          AND BarberId IS NOT NULL
+        ORDER BY BarberId, AppointmentTime ASC
+      `);
+      const aptRows = aptResult.recordset || [];
+      for (const row of aptRows) {
+        const bid = row.BarberId;
+        const aptTime = row.AppointmentTime;
+        if (bid && aptTime != null) {
+          const isoTime =
+            aptTime instanceof Date
+              ? aptTime.toISOString()
+              : typeof aptTime === "string"
+                ? aptTime.replace(" ", "T")
+                : String(aptTime);
+          if (!todayAppointmentsByBarber.has(bid)) {
+            todayAppointmentsByBarber.set(bid, []);
+          }
+          todayAppointmentsByBarber.get(bid).push(isoTime);
+        }
+      }
+    } catch (queryErr) {
+      console.error("❌ GET /api/barbers query error (fallback to basic):", queryErr.message);
+      const fallback = await pool.request().query(`
+        SELECT Id, BarberName, Phone, Status FROM Barbers ORDER BY Id ASC
+      `);
+      recordset = fallback.recordset || [];
+    }
+
+    const barbers = recordset.map((r) => {
+      const todayTimes = todayAppointmentsByBarber.get(r.Id) || [];
+      return {
+        id: r.Id,
+        BarberName: r.BarberName ?? "",
+        Phone: r.Phone ?? "",
+        Status: r.Status ?? "Active",
+        todayAppointments: todayTimes,
+      };
+    });
+    res.json(barbers);
+  } catch (err) {
+    console.error("❌ Error fetching barbers - message:", err.message);
+    console.error("❌ Error fetching barbers - stack:", err.stack);
+    console.error("❌ Error fetching barbers - full:", err);
+    res.status(500).json({
+      message: "Lỗi server khi tải danh sách thợ",
+      error: err.message || String(err),
+    });
+  }
+});
+
+// POST /api/barbers - Thêm thợ mới (không dùng ảnh)
+app.post("/api/barbers", async (req, res) => {
+  try {
+    const { name, BarberName, phone, status } = req.body;
+    const barberName = (BarberName || name || "").toString().trim();
+    const barberPhone = (phone || "").toString().trim();
+    const barberStatus =
+      (status || "active").toString().toLowerCase() === "inactive" ? "Inactive" : "Active";
+
+    if (!barberName || !barberPhone) {
+      return res.status(400).json({ message: "Thiếu tên hoặc số điện thoại" });
+    }
+
+    const pool = await connectDB();
+    const result = await pool
+      .request()
+      .input("BarberName", sql.NVarChar(100), barberName)
+      .input("Phone", sql.VarChar(20), barberPhone)
+      .input("Status", sql.VarChar(20), barberStatus)
+      .query(`
+        INSERT INTO Barbers (BarberName, Phone, Status)
+        OUTPUT INSERTED.Id
+        VALUES (@BarberName, @Phone, @Status)
+      `);
+    const newId = result.recordset[0].Id;
+    res.status(201).json({
+      id: newId,
+      BarberName: barberName,
+      Phone: barberPhone,
+      Status: barberStatus,
+    });
+  } catch (err) {
+    console.error("❌ Error creating barber:", err);
+    res.status(500).json({ message: "Lỗi server khi thêm thợ" });
+  }
+});
+
+// PUT /api/barbers/:id - Cập nhật thợ (không dùng ảnh)
+app.put("/api/barbers/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { name, BarberName, phone, status } = req.body;
+  const barberName = (BarberName || name || "").toString().trim();
+  const barberPhone = (phone || "").toString().trim();
+  const barberStatus =
+    (status || "active").toString().toLowerCase() === "inactive" ? "Inactive" : "Active";
+
+  if (isNaN(id)) return res.status(400).json({ message: "ID không hợp lệ" });
+  if (!barberName || !barberPhone) {
+    return res.status(400).json({ message: "Thiếu tên hoặc số điện thoại" });
+  }
+
+  try {
+    const pool = await connectDB();
+    const check = await pool.request().input("id", sql.Int, id).query("SELECT Id FROM Barbers WHERE Id = @id");
+    if (check.recordset.length === 0) {
+      return res.status(404).json({ message: "Không tìm thấy thợ" });
+    }
+    await pool
+      .request()
+      .input("id", sql.Int, id)
+      .input("BarberName", sql.NVarChar(100), barberName)
+      .input("Phone", sql.VarChar(20), barberPhone)
+      .input("Status", sql.VarChar(20), barberStatus)
+      .query(`
+        UPDATE Barbers
+        SET BarberName = @BarberName, Phone = @Phone, Status = @Status
+        WHERE Id = @id
+      `);
+    res.json({
+      id,
+      BarberName: barberName,
+      Phone: barberPhone,
+      Status: barberStatus,
+    });
+  } catch (err) {
+    console.error("❌ Error updating barber:", err);
+    res.status(500).json({ message: "Lỗi server khi cập nhật thợ" });
+  }
+});
+
+// DELETE /api/barbers/:id - Xóa thợ
+app.delete("/api/barbers/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ message: "ID không hợp lệ" });
+
+  try {
+    const pool = await connectDB();
+    const result = await pool
+      .request()
+      .input("id", sql.Int, id)
+      .query("DELETE FROM Barbers WHERE Id = @id");
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: "Không tìm thấy thợ" });
+    }
+    res.json({ message: "Xóa thành công" });
+  } catch (err) {
+    console.error("❌ Error deleting barber:", err);
+    res.status(500).json({ message: "Lỗi server khi xóa thợ" });
+  }
+});
+
 // ===== CHẠY SERVER =====
-app.listen(3001, () => {
+app.listen(3001, async () => {
   console.log("🚀 Server chạy tại http://localhost:3001");
+  try {
+    await ensureBarbersTable();
+  } catch (err) {
+    console.error("⚠️ Barbers table init failed (chạy migration nếu cần):", err.message);
+  }
 });

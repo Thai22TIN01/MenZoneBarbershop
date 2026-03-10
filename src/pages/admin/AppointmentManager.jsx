@@ -30,7 +30,7 @@ export default function AppointmentManager() {
         id: item.Id,
         customerName: item.CustomerName,
         customerPhone: item.CustomerPhone,
-        barberName: "Chưa chọn", // TODO: sau này map từ bảng Barber nếu có BarberId
+        barberName: item.BarberName ?? item.barberName ?? "Chưa chọn",
         time: item.AppointmentTime,
         // Chuẩn hóa status từ backend (SQL Server) sang status dùng trong frontend
         status: (() => {
@@ -145,10 +145,23 @@ export default function AppointmentManager() {
     );
   };
 
-  const filteredAppointments =
-    filterStatus === "all"
-      ? appointments
-      : appointments.filter((apt) => apt.status === filterStatus);
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  const todayStr = toDateStr(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateStr(tomorrow);
+
+  const getAptDateStr = (apt) => (apt?.time ? toDateStr(new Date(apt.time)) : "");
+
+  const filteredAppointments = appointments.filter((apt) => {
+    if (filterStatus === "all") return true;
+    if (filterStatus === "today") return getAptDateStr(apt) === todayStr;
+    if (filterStatus === "tomorrow") return getAptDateStr(apt) === tomorrowStr;
+    if (filterStatus === "completed") return apt.status === "completed";
+    return apt.status === filterStatus;
+  });
 
   return (
     <div className="p-8">
@@ -162,10 +175,9 @@ export default function AppointmentManager() {
             className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#d4a441]"
           >
             <option value="all">Tất cả</option>
-            <option value="pending">Chờ xác nhận</option>
-            <option value="confirmed">Đã xác nhận</option>
-            <option value="completed">Hoàn thành</option>
-            <option value="cancelled">Đã hủy</option>
+            <option value="today">Hôm nay</option>
+            <option value="tomorrow">Ngày mai</option>
+            <option value="completed">Đã hoàn thành</option>
           </select>
         </div>
       </div>

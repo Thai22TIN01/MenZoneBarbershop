@@ -230,7 +230,7 @@ export default function BookingPage() {
       alert("Vui lòng chọn giờ");
       return;
     }
-    
+
     // Update state, save to localStorage, and change step (go to customer info)
     setBookingData(parsed);
     localStorage.setItem("bookingData", JSON.stringify(parsed));

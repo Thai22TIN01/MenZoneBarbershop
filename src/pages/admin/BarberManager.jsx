@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
+const API_URL = "http://localhost:3001/api/barbers";
+
 export default function BarberManager() {
   const [barbers, setBarbers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingBarber, setEditingBarber] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -15,27 +18,19 @@ export default function BarberManager() {
   });
 
   useEffect(() => {
-    const fn = async () => {
-      await fetchBarbers();
-    };
-    fn();
+    fetchBarbers();
   }, []);
 
   const fetchBarbers = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API endpoint
-      // const res = await axios.get("http://localhost:3001/api/barbers");
-      // setBarbers(res.data);
-      
-      // Mock data for now
-      setBarbers([
-        { id: 1, name: "Nguyễn Hoàng Phong", phone: "0901234567", status: "active", image: null },
-        { id: 2, name: "Trần Minh Tuấn", phone: "0912345678", status: "active", image: null },
-        { id: 3, name: "Lê Xuân Vũ", phone: "0923456789", status: "inactive", image: null },
-      ]);
+      setError(null);
+      const res = await axios.get(API_URL);
+      setBarbers(res.data || []);
     } catch (err) {
       console.error("Error fetching barbers:", err);
+      setError(err.response?.data?.message || "Không thể tải danh sách thợ. Vui lòng thử lại.");
+      setBarbers([]);
     } finally {
       setLoading(false);
     }
@@ -45,18 +40,23 @@ export default function BarberManager() {
     setEditingBarber(null);
     setForm({ name: "", phone: "", status: "active", image: null });
     setImagePreview(null);
+    setError(null);
     setShowModal(true);
   };
 
   const handleEdit = (barber) => {
     setEditingBarber(barber);
+    const name = barber.BarberName ?? barber.name ?? "";
+    const statusRaw = (barber.Status ?? barber.status ?? "active").toLowerCase();
+    const status = statusRaw === "inactive" ? "inactive" : "active";
     setForm({
-      name: barber.name,
-      phone: barber.phone,
-      status: barber.status,
-      image: barber.image || null,
+      name,
+      phone: barber.Phone ?? barber.phone ?? "",
+      status,
+      image: barber.Image ?? barber.image ?? null,
     });
-    setImagePreview(barber.image || null);
+    setImagePreview(barber.Image ?? barber.image ?? null);
+    setError(null);
     setShowModal(true);
   };
 
@@ -64,12 +64,14 @@ export default function BarberManager() {
     if (!confirm("Bạn có chắc chắn muốn xóa thợ cắt tóc này?")) return;
 
     try {
-      // TODO: Replace with actual API endpoint
-      // await axios.delete(`http://localhost:3001/api/barbers/${id}`);
+      setError(null);
+      await axios.delete(`${API_URL}/${id}`);
       setBarbers(barbers.filter((b) => b.id !== id));
       alert("Xóa thành công");
     } catch (err) {
-      alert("Lỗi khi xóa");
+      const msg = err.response?.data?.message || "Lỗi khi xóa";
+      setError(msg);
+      alert(msg);
     }
   };
 
@@ -101,34 +103,39 @@ export default function BarberManager() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      setError(null);
+      const payload = {
+        name: form.name,
+        phone: form.phone,
+        status: form.status,
+        image: form.image,
+      };
       if (editingBarber) {
-        // TODO: Replace with actual API endpoint
-        // await axios.put(`http://localhost:3001/api/barbers/${editingBarber.id}`, form);
+        const res = await axios.put(`${API_URL}/${editingBarber.id}`, payload);
         setBarbers(
           barbers.map((b) =>
-            b.id === editingBarber.id ? { ...editingBarber, ...form } : b
+            b.id === editingBarber.id ? res.data : b
           )
         );
         alert("Cập nhật thành công");
       } else {
-        // TODO: Replace with actual API endpoint
-        // const res = await axios.post("http://localhost:3001/api/barbers", form);
-        const newBarber = {
-          id: barbers.length + 1,
-          ...form,
-        };
+        const res = await axios.post(API_URL, payload);
+        const newBarber = res.data;
         setBarbers([...barbers, newBarber]);
         alert("Thêm thành công");
       }
       setShowModal(false);
       setImagePreview(null);
     } catch (err) {
-      alert("Lỗi khi lưu");
+      const msg = err.response?.data?.message || "Lỗi khi lưu";
+      setError(msg);
+      alert(msg);
     }
   };
 
   const getStatusBadge = (status) => {
-    return status === "active" ? (
+    const s = (status || "").toLowerCase();
+    return s === "active" ? (
       <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
         Đang làm việc
       </span>
@@ -173,38 +180,98 @@ export default function BarberManager() {
     return getPlaceholderImage();
   };
 
+  const getBarberName = (b) => b.BarberName ?? b.name ?? "";
+  const getBarberPhone = (b) => b.Phone ?? b.phone ?? "";
+  const getBarberImage = (b) => b.Image ?? b.image ?? null;
+  const getBarberStatus = (b) => b.Status ?? b.status ?? "Active";
+  const getTodayAppointments = (b) => {
+    const arr = b.todayAppointments ?? b.TodayAppointments ?? [];
+    return Array.isArray(arr) ? arr : [];
+  };
+  const formatAppointmentTime = (aptTime) => {
+    if (aptTime == null || aptTime === "") return "";
+    try {
+      let dateStr = aptTime;
+      if (typeof aptTime === "string" && aptTime.includes(" ") && !aptTime.includes("T")) {
+        dateStr = aptTime.replace(" ", "T");
+      }
+      const d = aptTime instanceof Date ? aptTime : new Date(dateStr);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    } catch {
+      return "";
+    }
+  };
+
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Quản lý thợ cắt tóc</h1>
-        <button
-          onClick={handleAdd}
-          className="px-4 py-2 bg-[#d4a441] text-black font-medium rounded-lg hover:bg-[#c49431] transition-colors"
-        >
-          + Thêm thợ
-        </button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-white">Quản lý thợ cắt tóc</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={fetchBarbers}
+            disabled={loading}
+            className="px-4 py-2 bg-zinc-800 border border-zinc-700 text-white rounded-lg hover:bg-zinc-700 transition-colors disabled:opacity-50"
+          >
+            Làm mới
+          </button>
+          <button
+            onClick={handleAdd}
+            className="px-4 py-2 bg-[#d4a441] text-black font-medium rounded-lg hover:bg-[#c49431] transition-colors w-fit"
+          >
+            + Thêm thợ
+          </button>
+        </div>
       </div>
+
+      {/* ERROR */}
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm flex flex-wrap items-center justify-between gap-2">
+          <span>{error}</span>
+          <div className="flex gap-2">
+            <button
+              onClick={fetchBarbers}
+              className="px-2 py-1 bg-zinc-700 rounded hover:bg-zinc-600 text-white text-xs"
+            >
+              Thử lại
+            </button>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-400 hover:text-red-300"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* TABLE */}
       <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[640px]">
             <thead className="bg-zinc-800/50 border-b border-zinc-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider w-20">
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider w-14">
+                  ID
+                </th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider w-20">
                   Ảnh
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Tên thợ
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Số điện thoại
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  SĐT
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Trạng thái
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                <th className="px-4 sm:px-6 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Thao tác
                 </th>
               </tr>
@@ -212,13 +279,13 @@ export default function BarberManager() {
             <tbody className="divide-y divide-zinc-800">
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-zinc-400">
+                  <td colSpan="6" className="px-6 py-12 text-center text-zinc-400">
                     Đang tải...
                   </td>
                 </tr>
               ) : barbers.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-zinc-400">
+                  <td colSpan="6" className="px-6 py-12 text-center text-zinc-400">
                     Chưa có dữ liệu
                   </td>
                 </tr>
@@ -228,21 +295,36 @@ export default function BarberManager() {
                     key={barber.id}
                     className="hover:bg-zinc-800/30 transition-colors"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {renderBarberImage(barber.image)}
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-zinc-400">
+                      {barber.id}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                      {renderBarberImage(getBarberImage(barber))}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-white">
-                        {barber.name}
+                        {getBarberName(barber)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-zinc-300">{barber.phone}</div>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-zinc-300">{getBarberPhone(barber)}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(barber.status)}
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        {getStatusBadge(getBarberStatus(barber))}
+                        {(() => {
+                          const times = getTodayAppointments(barber)
+                            .map(formatAppointmentTime)
+                            .filter(Boolean);
+                          return times.length > 0 ? (
+                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 w-fit">
+                              Có lịch hôm nay ({times.join(", ")})
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleEdit(barber)}
@@ -269,8 +351,14 @@ export default function BarberManager() {
 
       {/* MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6 w-full max-w-md">
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
+        >
+          <div
+            className="bg-zinc-900 rounded-lg border border-zinc-800 p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="text-xl font-bold text-white mb-4">
               {editingBarber ? "Sửa thợ cắt tóc" : "Thêm thợ cắt tóc"}
             </h2>
