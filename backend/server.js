@@ -1234,30 +1234,30 @@ app.get("/api/barbers", async (req, res) => {
       `);
       recordset = barbersResult.recordset || [];
 
-      const aptResult = await pool.request().query(`
-        SELECT BarberId, AppointmentTime
-        FROM Appointments
-        WHERE CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
-          AND Status IN ('confirmed', 'success', 'completed')
-          AND BarberId IS NOT NULL
-        ORDER BY BarberId, AppointmentTime ASC
-      `);
-      const aptRows = aptResult.recordset || [];
-      for (const row of aptRows) {
-        const bid = row.BarberId;
-        const aptTime = row.AppointmentTime;
-        if (bid && aptTime != null) {
-          const isoTime =
-            aptTime instanceof Date
-              ? aptTime.toISOString()
-              : typeof aptTime === "string"
-                ? aptTime.replace(" ", "T")
-                : String(aptTime);
-          if (!todayAppointmentsByBarber.has(bid)) {
-            todayAppointmentsByBarber.set(bid, []);
-          }
-          todayAppointmentsByBarber.get(bid).push(isoTime);
-        }
+      for (const barber of recordset) {
+        const barberId = Number(barber.Id);
+        if (!barberId || isNaN(barberId)) continue;
+        const aptResult = await pool
+          .request()
+          .input("barberId", sql.Int, barberId)
+          .query(`
+            SELECT AppointmentTime
+            FROM Appointments
+            WHERE BarberId = @barberId
+              AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(GETDATE() AS DATE)
+              AND Status IN ('confirmed', 'success', 'completed')
+            ORDER BY AppointmentTime ASC
+          `);
+        const todayTimes = (aptResult.recordset || []).map((a) => {
+          const aptTime = a.AppointmentTime;
+          if (aptTime == null) return null;
+          return aptTime instanceof Date
+            ? aptTime.toISOString()
+            : typeof aptTime === "string"
+              ? aptTime.replace(" ", "T")
+              : String(aptTime);
+        }).filter(Boolean);
+        todayAppointmentsByBarber.set(barberId, todayTimes);
       }
     } catch (queryErr) {
       console.error("❌ GET /api/barbers query error (fallback to basic):", queryErr.message);
@@ -1268,7 +1268,7 @@ app.get("/api/barbers", async (req, res) => {
     }
 
     const barbers = recordset.map((r) => {
-      const todayTimes = todayAppointmentsByBarber.get(r.Id) || [];
+      const todayTimes = todayAppointmentsByBarber.get(Number(r.Id)) || [];
       return {
         id: r.Id,
         BarberName: r.BarberName ?? "",
