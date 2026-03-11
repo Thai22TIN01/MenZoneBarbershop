@@ -3,7 +3,7 @@ import axios from "axios";
 
 const API_SERVICES = "http://localhost:3001/api/services";
 
-export default function ServiceManager() {
+export default function ServiceManager({ topServices = [], className = "" }) {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -98,10 +98,12 @@ export default function ServiceManager() {
   };
 
   return (
-    <div className="p-8">
-      {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Quản lý dịch vụ</h1>
+    <div className={`flex flex-col h-full p-8 ${className}`.trim()}>
+      {/* Header: Quản lý dịch vụ + nút hành động */}
+      <div className="flex items-center justify-between mb-6 flex-shrink-0">
+        <div className="admin-title-box mb-6 inline-block">
+          <h1 className="text-3xl uppercase admin-title-text">QUẢN LÝ DỊCH VỤ</h1>
+        </div>
         <div className="flex gap-2">
           <button
             onClick={fetchServices}
@@ -119,9 +121,8 @@ export default function ServiceManager() {
         </div>
       </div>
 
-      {/* ERROR */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-center justify-between">
+        <div className="mb-4 px-4 py-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-center justify-between flex-shrink-0">
           <span>{error}</span>
           <button
             onClick={() => setError(null)}
@@ -132,9 +133,32 @@ export default function ServiceManager() {
         </div>
       )}
 
-      {/* TABLE */}
-      <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* Hai cột: Top dịch vụ | Bảng dịch vụ - chiều cao bằng nhau */}
+      <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0 items-stretch">
+        {/* Bên trái: Card Top dịch vụ */}
+        <div className="w-full lg:w-[30%] shrink-0 lg:h-full">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 lg:h-full flex flex-col">
+            <p className="text-zinc-400 text-sm mb-3">Top dịch vụ tháng này</p>
+            {topServices.length === 0 ? (
+              <p className="text-zinc-500 text-sm">Chưa có dữ liệu</p>
+            ) : (
+              <div className="space-y-3">
+                {topServices.map((service, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-white">{service.name}</span>
+                    <span className="text-[#d4a441] font-medium">{service.count} lượt</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bên phải: Bảng quản lý dịch vụ */}
+        <div className="flex-1 flex flex-col min-h-0 lg:h-full">
+          <div className="overflow-y-auto flex-1 min-h-0">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden h-full">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-zinc-800/50 border-b border-zinc-700">
               <tr>
@@ -214,7 +238,10 @@ export default function ServiceManager() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
+      </div>
+      </div>
       </div>
 
       {/* MODAL */}

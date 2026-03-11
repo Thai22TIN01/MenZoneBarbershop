@@ -879,19 +879,98 @@ app.get('/api/vnpay/vnpay_return', async function (req, res, next) {
 });
 
 // ===== API REVENUE =====
+// GET /api/revenue/range?startDate=yyyy-MM-dd&endDate=yyyy-MM-dd - Doanh thu theo khoảng ngày
+app.get("/api/revenue/range", async (req, res) => {
+  try {
+    let { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: "Thiếu startDate hoặc endDate" });
+    }
+    startDate = String(startDate).trim();
+    endDate = String(endDate).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      return res.status(400).json({ message: "Định dạng ngày phải là yyyy-MM-dd" });
+    }
+    const pool = await connectDB();
+    const result = await pool
+      .request()
+      .input("startDate", sql.VarChar(10), startDate)
+      .input("endDate", sql.VarChar(10), endDate)
+      .query(`
+        SELECT ISNULL(SUM(TotalPrice), 0) AS revenue
+        FROM Appointments
+        WHERE Status = 'completed'
+          AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) BETWEEN CAST(@startDate AS DATE) AND CAST(@endDate AS DATE)
+      `);
+    const revenue = parseFloat(result.recordset[0]?.revenue ?? 0) || 0;
+    console.log("Revenue range", startDate, "-", endDate, "->", revenue);
+    res.json({ revenue: Math.round(revenue) });
+  } catch (err) {
+    console.error("❌ Error fetching revenue range:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
+
 app.get("/api/revenue/today", async (req, res) => {
   try {
     const pool = await connectDB();
     const result = await pool.request().query(`
-      SELECT ISNULL(SUM(TotalPrice), 0) as revenue
+      SELECT ISNULL(SUM(TotalPrice), 0) AS revenue
       FROM Appointments
       WHERE Status = 'completed'
-        AND CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+        AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(GETDATE() AS DATE)
+    `);
+    const revenue = parseFloat(result.recordset[0]?.revenue ?? 0) || 0;
+    console.log("RevenueToday query result:", result.recordset);
+    res.json({ revenue: Math.round(revenue) });
+  } catch (err) {
+    console.error("❌ Error fetching revenue today:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
+
+app.get("/api/revenue/week", async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().query(`
+      SELECT ISNULL(SUM(TotalPrice), 0) AS revenue
+      FROM Appointments
+      WHERE Status = 'completed'
+        AND DATEPART(WEEK, DATEADD(hour, 7, AppointmentTime)) = DATEPART(WEEK, GETDATE())
+        AND YEAR(DATEADD(hour, 7, AppointmentTime)) = YEAR(GETDATE())
     `);
     const revenue = parseFloat(result.recordset[0]?.revenue ?? 0) || 0;
     res.json({ revenue: Math.round(revenue) });
   } catch (err) {
-    console.error("❌ Error fetching revenue today:", err.message);
+    console.error("❌ Error fetching revenue week:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
+
+// GET /api/revenue/week-by-day - Doanh thu theo từng ngày trong tuần (cho bar chart)
+app.get("/api/revenue/week-by-day", async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().query(`
+      SELECT
+        DATENAME(WEEKDAY, DATEADD(hour, 7, AppointmentTime)) AS DayName,
+        DATEPART(WEEKDAY, DATEADD(hour, 7, AppointmentTime)) AS DayNumber,
+        ISNULL(SUM(TotalPrice), 0) AS Revenue
+      FROM Appointments
+      WHERE Status = 'completed'
+        AND DATEPART(WEEK, DATEADD(hour, 7, AppointmentTime)) = DATEPART(WEEK, GETDATE())
+        AND YEAR(DATEADD(hour, 7, AppointmentTime)) = YEAR(GETDATE())
+      GROUP BY DATENAME(WEEKDAY, DATEADD(hour, 7, AppointmentTime)), DATEPART(WEEKDAY, DATEADD(hour, 7, AppointmentTime))
+      ORDER BY CASE WHEN DATEPART(WEEKDAY, DATEADD(hour, 7, AppointmentTime)) = 1 THEN 8 ELSE DATEPART(WEEKDAY, DATEADD(hour, 7, AppointmentTime)) END
+    `);
+    const data = (result.recordset || []).map((r) => ({
+      day: r.DayName ?? "",
+      dayNumber: r.DayNumber ?? 0,
+      revenue: Math.round(parseFloat(r.Revenue ?? 0) || 0),
+    }));
+    res.json(data);
+  } catch (err) {
+    console.error("❌ Error fetching revenue week-by-day:", err.message);
     res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 });
@@ -900,11 +979,11 @@ app.get("/api/revenue/month", async (req, res) => {
   try {
     const pool = await connectDB();
     const result = await pool.request().query(`
-      SELECT ISNULL(SUM(TotalPrice), 0) as revenue
+      SELECT ISNULL(SUM(TotalPrice), 0) AS revenue
       FROM Appointments
       WHERE Status = 'completed'
-        AND MONTH(AppointmentTime) = MONTH(GETDATE())
-        AND YEAR(AppointmentTime) = YEAR(GETDATE())
+        AND MONTH(DATEADD(hour, 7, AppointmentTime)) = MONTH(GETDATE())
+        AND YEAR(DATEADD(hour, 7, AppointmentTime)) = YEAR(GETDATE())
     `);
     const revenue = parseFloat(result.recordset[0]?.revenue ?? 0) || 0;
     res.json({ revenue: Math.round(revenue) });
@@ -935,12 +1014,13 @@ app.get("/api/dashboard/stats", async (req, res) => {
     const completedToday = completedResult.recordset[0]?.completed ?? 0;
 
     const revenueResult = await pool.request().query(`
-      SELECT ISNULL(SUM(TotalPrice), 0) as revenue
+      SELECT ISNULL(SUM(TotalPrice), 0) AS revenue
       FROM Appointments
-      WHERE Status IN ('completed', 'success')
-        AND CAST(AppointmentTime AS DATE) = CAST(GETDATE() AS DATE)
+      WHERE Status = 'completed'
+        AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(GETDATE() AS DATE)
     `);
     const revenueToday = parseFloat(revenueResult.recordset[0]?.revenue ?? 0) || 0;
+    console.log("Dashboard stats revenueToday result:", revenueResult.recordset);
 
     res.json({
       totalToday: Number(totalToday),
@@ -1070,6 +1150,42 @@ async function ensureServicesTable() {
     throw err;
   }
 }
+
+app.get("/api/services/top", async (req, res) => {
+  try {
+    const pool = await connectDB();
+
+    const result = await pool.request().query(`
+      SELECT Services
+      FROM Appointments
+      WHERE Status IN ('completed', 'success')
+        AND MONTH(AppointmentTime) = MONTH(GETDATE())
+        AND YEAR(AppointmentTime) = YEAR(GETDATE())
+    `);
+
+    const serviceCount = {};
+
+    result.recordset.forEach((row) => {
+      try {
+        const services = JSON.parse(row.Services || "[]");
+        (Array.isArray(services) ? services : []).forEach((item) => {
+          const name = typeof item === "string" ? item : item?.name || item?.title || String(item);
+          if (name) serviceCount[name] = (serviceCount[name] || 0) + 1;
+        });
+      } catch {}
+    });
+
+    const sorted = Object.entries(serviceCount)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    res.json(sorted);
+  } catch (err) {
+    console.error("Error fetching top services:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 app.get("/api/services", async (req, res) => {
   try {
@@ -1298,6 +1414,39 @@ app.get("/api/barbers", async (req, res) => {
   }
 });
 
+// GET /api/barbers/top - Top 5 thợ được đặt lịch nhiều nhất trong tháng
+app.get("/api/barbers/top", async (req, res) => {
+  try {
+    const pool = await connectDB();
+    if (!pool) {
+      return res.status(500).json({ message: "Lỗi server", error: "Không kết nối được database" });
+    }
+
+    const result = await pool.request().query(`
+      SELECT TOP 5
+        b.BarberName AS name,
+        COUNT(a.Id) AS count
+      FROM Appointments a
+      JOIN Barbers b ON a.BarberId = b.Id
+      WHERE a.Status IN ('confirmed', 'completed', 'success')
+        AND MONTH(DATEADD(hour, 7, a.AppointmentTime)) = MONTH(GETDATE())
+        AND YEAR(DATEADD(hour, 7, a.AppointmentTime)) = YEAR(GETDATE())
+      GROUP BY b.BarberName
+      ORDER BY COUNT(a.Id) DESC
+    `);
+
+    const topBarbers = (result.recordset || []).map((r) => ({
+      name: r.name ?? "",
+      count: Number(r.count) ?? 0,
+    }));
+
+    res.json(topBarbers);
+  } catch (err) {
+    console.error("❌ Error fetching top barbers:", err.message);
+    res.status(500).json({ message: "Lỗi server khi tải top thợ" });
+  }
+});
+
 // POST /api/barbers - Thêm thợ mới (không dùng ảnh)
 app.post("/api/barbers", async (req, res) => {
   try {
@@ -1399,6 +1548,27 @@ app.delete("/api/barbers/:id", async (req, res) => {
   }
 });
 
+// ===== TỰ ĐỘNG HOÀN THÀNH LỊCH HẸN =====
+// Disabled: hệ thống không tự động hoàn thành lịch.
+// Trạng thái "completed" sẽ do admin bấm thủ công trong dashboard.
+async function autoCompleteAppointments() {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().query(`
+      UPDATE Appointments
+      SET Status = 'completed'
+      WHERE Status = 'confirmed'
+        AND AppointmentTime < GETDATE()
+    `);
+    const count = result.rowsAffected?.[0] ?? 0;
+    if (count > 0) {
+      console.log(`✅ Auto completed ${count} appointments`);
+    }
+  } catch (err) {
+    console.error("❌ autoCompleteAppointments error:", err.message);
+  }
+}
+
 // ===== CHẠY SERVER =====
 app.listen(3001, async () => {
   console.log("🚀 Server chạy tại http://localhost:3001");
@@ -1407,4 +1577,6 @@ app.listen(3001, async () => {
   } catch (err) {
     console.error("⚠️ Barbers table init failed (chạy migration nếu cần):", err.message);
   }
+  // autoCompleteAppointments();
+  // setInterval(autoCompleteAppointments, 5 * 60 * 1000);
 });

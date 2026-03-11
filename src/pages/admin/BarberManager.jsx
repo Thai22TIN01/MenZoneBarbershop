@@ -3,7 +3,7 @@ import axios from "axios";
 
 const API_URL = "http://localhost:3001/api/barbers";
 
-export default function BarberManager() {
+export default function BarberManager({ topBarbers = [] }) {
   const [barbers, setBarbers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -198,23 +198,25 @@ export default function BarberManager() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Quản lý thợ cắt tóc</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={fetchBarbers}
-            disabled={loading}
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 text-white rounded-lg hover:bg-zinc-700 transition-colors disabled:opacity-50"
-          >
-            Làm mới
-          </button>
-          <button
-            onClick={handleAdd}
-            className="px-4 py-2 bg-[#d4a441] text-black font-medium rounded-lg hover:bg-[#c49431] transition-colors w-fit"
-          >
-            + Thêm thợ
-          </button>
+      {/* HEADER: Tiêu đề + Top thợ */}
+      <div className="flex flex-col lg:flex-row items-start justify-between gap-4 mb-6">
+        <div className="admin-title-box inline-block">
+          <h1 className="text-3xl uppercase admin-title-text">QUẢN LÝ THỢ CẮT TÓC</h1>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 w-full lg:w-[320px] shrink-0">
+          <p className="text-zinc-400 mb-3 text-sm">Top thợ được đặt nhiều nhất</p>
+          {topBarbers.length === 0 ? (
+            <p className="text-zinc-500 text-sm">Chưa có dữ liệu</p>
+          ) : (
+            <div className="space-y-2">
+              {topBarbers.map((b, index) => (
+                <div key={index} className="flex justify-between text-sm">
+                  <span className="text-white">{b.name}</span>
+                  <span className="text-[#d4a441] font-medium">{b.count} lượt</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -241,6 +243,14 @@ export default function BarberManager() {
 
       {/* TABLE */}
       <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden">
+        <div className="mb-4 px-4 sm:px-6 pt-4">
+          <button
+            onClick={handleAdd}
+            className="px-4 py-2 bg-[#d4a441] text-black font-medium rounded-lg hover:opacity-90 transition"
+          >
+            + Thêm thợ
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
             <thead className="bg-zinc-800/50 border-b border-zinc-700">
@@ -314,21 +324,19 @@ export default function BarberManager() {
                       </div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleEdit(barber)}
-                          className="text-[#d4a441] hover:text-[#c49431] transition-colors"
-                        >
-                          Sửa
-                        </button>
-                        <span className="text-zinc-600">|</span>
-                        <button
-                          onClick={() => handleDelete(barber.id)}
-                          className="text-red-400 hover:text-red-300 transition-colors"
-                        >
-                          Xóa
-                        </button>
-                      </div>
+                      <span
+                        onClick={() => handleEdit(barber)}
+                        className="text-yellow-500 cursor-pointer hover:underline"
+                      >
+                        Sửa
+                      </span>
+                      <span className="mx-2 text-zinc-500">|</span>
+                      <span
+                        onClick={() => handleDelete(barber.id)}
+                        className="text-red-500 cursor-pointer hover:underline"
+                      >
+                        Xóa
+                      </span>
                     </td>
                   </tr>
                 ))

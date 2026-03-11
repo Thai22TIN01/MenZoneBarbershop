@@ -1,10 +1,19 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-export default function AppointmentManager() {
+export default function AppointmentManager({
+  revenue = 0,
+  revenueFilter = "day",
+  setRevenueFilter = () => {},
+  revenueLoading = false,
+}) {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [filteredRevenue, setFilteredRevenue] = useState(null);
+  const [dateFilterLoading, setDateFilterLoading] = useState(false);
 
   useEffect(() => {
     const fn = async () => {
@@ -31,6 +40,8 @@ export default function AppointmentManager() {
         customerName: item.CustomerName,
         customerPhone: item.CustomerPhone,
         barberName: item.BarberName ?? item.barberName ?? "Chưa chọn",
+        services: item.Services,
+        totalPrice: item.TotalPrice,
         time: item.AppointmentTime,
         // Chuẩn hóa status từ backend (SQL Server) sang status dùng trong frontend
         status: (() => {
@@ -57,6 +68,18 @@ export default function AppointmentManager() {
     if (!match) return str;
     const [, y, m, d, hh, mm] = match;
     return `${hh}:${mm} ${d}/${m}/${y}`;
+  };
+
+  const formatServices = (raw) => {
+    if (!raw) return "---";
+    try {
+      const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!Array.isArray(arr)) return "---";
+      const names = arr.map((x) => (typeof x === "string" ? x : x?.name || x?.title || "")).filter(Boolean);
+      return names.length ? names.join(", ") : "---";
+    } catch {
+      return "---";
+    }
   };
 
   const handleStatusChange = async (id, newStatus, appointment) => {
@@ -135,7 +158,7 @@ export default function AppointmentManager() {
     const config = statusConfig[status] || statusConfig.pending;
     return (
       <span
-        className={`px-2.5 py-1 text-xs font-medium rounded-full border ${config.className}`}
+        className={`px-2 py-0.5 text-[11px] font-medium rounded-full border ${config.className}`}
       >
         {config.label}
       </span>
@@ -160,6 +183,34 @@ export default function AppointmentManager() {
 
   const getAptDateStr = (apt) => getDateFromISO(apt?.time);
 
+  const toYYYYMMDD = (val) => {
+    if (!val) return "";
+    const v = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    const d = new Date(v);
+    return !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : v;
+  };
+
+  const handleDateFilter = async () => {
+    if (!fromDate || !toDate) return;
+    const start = toYYYYMMDD(fromDate);
+    const end = toYYYYMMDD(toDate);
+    setDateFilterLoading(true);
+    try {
+      const res = await axios.get("http://localhost:3001/api/revenue/range", {
+        params: { startDate: start, endDate: end },
+      });
+      setFilteredRevenue(res.data?.revenue ?? 0);
+    } catch (err) {
+      console.error("Error fetching revenue by date range:", err);
+      setFilteredRevenue(0);
+    } finally {
+      setDateFilterLoading(false);
+    }
+  };
+
   const filteredAppointments = appointments.filter((apt) => {
     if (filterStatus === "all") return true;
     if (filterStatus === "today") return getAptDateStr(apt) === todayStr;
@@ -169,100 +220,167 @@ export default function AppointmentManager() {
   });
 
   return (
-    <div className="p-8">
-      {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Quản lý lịch hẹn</h1>
-        <div className="flex items-center gap-2">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#d4a441]"
-          >
-            <option value="all">Tất cả</option>
-            <option value="today">Hôm nay</option>
-            <option value="tomorrow">Ngày mai</option>
-            <option value="completed">Đã hoàn thành</option>
-          </select>
+    <div className="p-8 w-full">
+      {/* HEADER: Tiêu đề | Doanh thu */}
+      <div className="flex items-start justify-between mb-6">
+        <div className="admin-title-box">
+          <h1 className="text-3xl uppercase admin-title-text">QUẢN LÝ LỊCH HẸN</h1>
+        </div>
+        <div className="revenue-card flex-1 min-w-0">
+          <p className="text-zinc-400 text-sm">Doanh thu</p>
+          <p className="text-xl font-bold text-[#d4a441] mt-1">
+            {dateFilterLoading
+              ? "..."
+              : filteredRevenue !== null
+                ? `${(filteredRevenue ?? 0).toLocaleString("vi-VN")}đ`
+                : revenueLoading
+                  ? "..."
+                  : `${(revenue ?? 0).toLocaleString("vi-VN")}đ`}
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => {
+                setFilteredRevenue(null);
+                setRevenueFilter("day");
+              }}
+              className={`px-3 py-1 rounded text-sm ${
+                revenueFilter === "day" && filteredRevenue === null
+                  ? "bg-[#d4a441] text-black"
+                  : "bg-zinc-800 text-white"
+              }`}
+            >
+              Ngày
+            </button>
+            <button
+              onClick={() => {
+                setFilteredRevenue(null);
+                setRevenueFilter("month");
+              }}
+              className={`px-3 py-1 rounded text-sm ${
+                revenueFilter === "month" && filteredRevenue === null
+                  ? "bg-[#d4a441] text-black"
+                  : "bg-zinc-800 text-white"
+              }`}
+            >
+              Tháng
+            </button>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="bg-zinc-800 text-white px-3 py-1 rounded border border-zinc-700 text-sm"
+            />
+            <span className="text-zinc-400">→</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="bg-zinc-800 text-white px-3 py-1 rounded border border-zinc-700 text-sm"
+            />
+            <button
+              onClick={handleDateFilter}
+              disabled={dateFilterLoading}
+              className="px-3 py-1 bg-[#d4a441] text-black rounded text-sm disabled:opacity-60"
+            >
+              {dateFilterLoading ? "..." : "Lọc"}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* TABLE */}
-      <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-zinc-800/50 border-b border-zinc-700">
+      {/* Filter + TABLE */}
+      <div className="flex items-center justify-between mb-4">
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#d4a441]"
+        >
+          <option value="all">Tất cả</option>
+          <option value="today">Hôm nay</option>
+          <option value="tomorrow">Ngày mai</option>
+          <option value="completed">Đã hoàn thành</option>
+        </select>
+      </div>
+
+      {/* TABLE - full width */}
+      <div className="bg-zinc-900 rounded-lg border border-zinc-800">
+        <table className="w-full table-fixed">
+          <thead className="bg-zinc-800/50 border-b border-zinc-700">
+            <tr>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[14%]">
+                Khách hàng
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[11%]">
+                Số điện thoại
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[11%]">
+                Thợ cắt tóc
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[18%]">
+                Dịch vụ
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[10%]">
+                Giá tiền
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[11%]">
+                Thời gian
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-[22%]">
+                Trạng thái
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800">
+            {loading ? (
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Khách hàng
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Số điện thoại
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Thợ cắt tóc
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Thời gian
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Trạng thái
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Thao tác
-                </th>
+                <td colSpan="7" className="px-3 py-6 text-center text-zinc-400 text-xs">
+                  Đang tải...
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {loading ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-zinc-400">
-                    Đang tải...
+            ) : filteredAppointments.length === 0 ? (
+              <tr>
+                <td colSpan="7" className="px-3 py-6 text-center text-zinc-400 text-xs">
+                  Chưa có dữ liệu
+                </td>
+              </tr>
+            ) : (
+              filteredAppointments.map((appointment) => (
+                <tr
+                  key={appointment.id}
+                  className="hover:bg-zinc-800/30 transition-colors"
+                >
+                  <td className="px-3 py-3 text-xs font-medium text-white">
+                    {appointment.customerName}
                   </td>
-                </tr>
-              ) : filteredAppointments.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-zinc-400">
-                    Chưa có dữ liệu
+                  <td className="px-3 py-3 whitespace-nowrap text-xs text-zinc-300">
+                    {appointment.customerPhone}
                   </td>
-                </tr>
-              ) : (
-                filteredAppointments.map((appointment) => (
-                  <tr
-                    key={appointment.id}
-                    className="hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-white">
-                        {appointment.customerName}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-zinc-300">
-                        {appointment.customerPhone}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-zinc-300">
-                        {appointment.barberName}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-zinc-300">
-                        {formatTime(appointment.time)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3 text-xs text-zinc-300">
+                    {appointment.barberName}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-zinc-300 break-words">
+                    {formatServices(appointment.services)}
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-xs text-zinc-300">
+                    {appointment.totalPrice != null
+                      ? Number(appointment.totalPrice).toLocaleString("vi-VN") + "đ"
+                      : "---"}
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-xs text-zinc-300">
+                    {formatTime(appointment.time)}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-col gap-2">
                       {getStatusBadge(appointment.status)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       {appointment.status === "pending" && (
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex gap-2">
                           <button
                             onClick={() =>
                               handleStatusChange(appointment.id, "confirmed", appointment)
                             }
-                            className="px-3 py-1 text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 transition-colors"
+                            className="px-2 py-1 text-[11px] bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 transition-colors"
                           >
                             Xác nhận
                           </button>
@@ -270,19 +388,19 @@ export default function AppointmentManager() {
                             onClick={() =>
                               handleStatusChange(appointment.id, "cancelled", appointment)
                             }
-                            className="px-3 py-1 text-xs bg-red-500/20 text-red-400 border border-red-500/30 rounded hover:bg-red-500/30 transition-colors"
+                            className="px-2 py-1 text-[11px] bg-red-500/20 text-red-400 border border-red-500/30 rounded hover:bg-red-500/30 transition-colors"
                           >
                             Hủy
                           </button>
                         </div>
                       )}
                       {appointment.status === "confirmed" && (
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex gap-2">
                           <button
                             onClick={() =>
                               handleStatusChange(appointment.id, "completed", appointment)
                             }
-                            className="px-3 py-1 text-xs bg-green-500/20 text-green-400 border border-green-500/30 rounded hover:bg-green-500/30 transition-colors"
+                            className="px-2 py-1 text-[11px] bg-green-500/20 text-green-400 border border-green-500/30 rounded hover:bg-green-500/30 transition-colors"
                           >
                             Hoàn thành
                           </button>
@@ -290,23 +408,19 @@ export default function AppointmentManager() {
                             onClick={() =>
                               handleStatusChange(appointment.id, "cancelled", appointment)
                             }
-                            className="px-3 py-1 text-xs bg-red-500/20 text-red-400 border border-red-500/30 rounded hover:bg-red-500/30 transition-colors"
+                            className="px-2 py-1 text-[11px] bg-red-500/20 text-red-400 border border-red-500/30 rounded hover:bg-red-500/30 transition-colors"
                           >
                             Hủy
                           </button>
                         </div>
                       )}
-                      {(appointment.status === "completed" ||
-                        appointment.status === "cancelled") && (
-                        <span className="text-zinc-500 text-xs">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

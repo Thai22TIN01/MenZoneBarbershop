@@ -5,11 +5,36 @@ import AppointmentManager from "./AppointmentManager";
 import ServiceManager from "./ServiceManager";
 
 const API_STATS = "http://localhost:3001/api/dashboard/stats";
+const API_REVENUE = "http://localhost:3001/api/revenue";
 
 export default function Admin() {
   const [tab, setTab] = useState("appointments");
   const [stats, setStats] = useState({ totalToday: 0, completedToday: 0, revenueToday: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [revenueFilter, setRevenueFilter] = useState("day");
+  const [revenue, setRevenue] = useState(0);
+  const [revenueLoading, setRevenueLoading] = useState(true);
+  const [topServices, setTopServices] = useState([]);
+  const [topBarbers, setTopBarbers] = useState([]);
+  const [weeklyRevenue, setWeeklyRevenue] = useState([]);
+
+  const dayShortMap = {
+    Monday: "T2",
+    Tuesday: "T3",
+    Wednesday: "T4",
+    Thursday: "T5",
+    Friday: "T6",
+    Saturday: "T7",
+    Sunday: "CN",
+    "Thứ Hai": "T2",
+    "Thứ Ba": "T3",
+    "Thứ Tư": "T4",
+    "Thứ Năm": "T5",
+    "Thứ Sáu": "T6",
+    "Thứ Bảy": "T7",
+    "Chủ Nhật": "CN",
+  };
+  const dayShortByNumber = { 1: "CN", 2: "T2", 3: "T3", 4: "T4", 5: "T5", 6: "T6", 7: "T7" };
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -22,8 +47,55 @@ export default function Admin() {
         setStatsLoading(false);
       }
     };
+    const fetchTopServices = async () => {
+      try {
+        const res = await axios.get("http://localhost:3001/api/services/top");
+        setTopServices(res.data || []);
+      } catch (err) {
+        console.error("Error fetching top services:", err);
+        setTopServices([]);
+      }
+    };
+    const fetchTopBarbers = async () => {
+      try {
+        const res = await axios.get("http://localhost:3001/api/barbers/top");
+        setTopBarbers(res.data || []);
+      } catch (err) {
+        console.error("Error fetching top barbers:", err);
+        setTopBarbers([]);
+      }
+    };
+    const fetchWeeklyRevenue = async () => {
+      try {
+        const res = await axios.get("http://localhost:3001/api/revenue/week-by-day");
+        setWeeklyRevenue(res.data || []);
+      } catch (err) {
+        console.error("Error fetching weekly revenue:", err);
+        setWeeklyRevenue([]);
+      }
+    };
     fetchStats();
+    fetchTopServices();
+    fetchTopBarbers();
+    fetchWeeklyRevenue();
   }, []);
+
+  useEffect(() => {
+    const fetchRevenue = async () => {
+      setRevenueLoading(true);
+      try {
+        const endpoint = revenueFilter === "day" ? "today" : revenueFilter;
+        const res = await axios.get(`${API_REVENUE}/${endpoint}`);
+        setRevenue(res.data?.revenue ?? 0);
+      } catch (err) {
+        console.error("Error fetching revenue:", err);
+        setRevenue(0);
+      } finally {
+        setRevenueLoading(false);
+      }
+    };
+    fetchRevenue();
+  }, [revenueFilter]);
 
   const menuItems = [
     { id: "appointments", label: "Lịch hẹn", icon: "📅" },
@@ -32,9 +104,9 @@ export default function Admin() {
   ];
 
   return (
-    <div className="flex h-screen pt-20 bg-zinc-950 text-white">
-      {/* SIDEBAR - fixed below header */}
-      <aside className="fixed left-0 top-20 bottom-0 z-40 w-56 bg-zinc-900 border-r border-zinc-800 flex flex-col">
+    <div className="flex h-screen pt-20 bg-zinc-950 text-white overflow-hidden">
+      {/* SIDEBAR - sticky, cố định khi scroll */}
+      <aside className="sticky top-20 left-0 z-40 w-48 h-[calc(100vh-5rem)] shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col">
         <div className="p-6 border-b border-zinc-800 flex-shrink-0">
           <h2 className="text-lg font-bold text-[#d4a441]">Dashboard</h2>
         </div>
@@ -58,35 +130,18 @@ export default function Admin() {
         </nav>
       </aside>
 
-      {/* CONTENT - scrollable only */}
-      <main className="ml-56 flex-1 min-h-0 overflow-y-auto">
-        {/* Stats cards */}
-        <div className="p-6 pb-0">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-              <p className="text-zinc-400 text-sm mb-1">Tổng lịch hôm nay</p>
-              <p className="text-2xl font-bold text-white">
-                {statsLoading ? "..." : stats.totalToday}
-              </p>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-              <p className="text-zinc-400 text-sm mb-1">Khách đã phục vụ hôm nay</p>
-              <p className="text-2xl font-bold text-green-400">
-                {statsLoading ? "..." : stats.completedToday}
-              </p>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-              <p className="text-zinc-400 text-sm mb-1">Doanh thu hôm nay</p>
-              <p className="text-2xl font-bold text-[#d4a441]">
-                {statsLoading ? "..." : `${(stats.revenueToday ?? 0).toLocaleString("vi-VN")}đ`}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {tab === "barbers" && <BarberManager />}
-        {tab === "appointments" && <AppointmentManager />}
-        {tab === "services" && <ServiceManager />}
+      {/* CONTENT - scroll riêng, sidebar đứng yên */}
+      <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto ${tab === "services" ? "flex flex-col" : ""}`}>
+        {tab === "barbers" && <BarberManager topBarbers={topBarbers} />}
+        {tab === "appointments" && (
+          <AppointmentManager
+            revenue={revenue}
+            revenueFilter={revenueFilter}
+            setRevenueFilter={setRevenueFilter}
+            revenueLoading={revenueLoading}
+          />
+        )}
+        {tab === "services" && <ServiceManager topServices={topServices} className="flex-1 min-h-0" />}
       </main>
     </div>
   );
