@@ -122,7 +122,7 @@ app.post("/api/chatbot", async (req, res) => {
 
 Thông tin tiệm:
 - Địa chỉ: 84 Nguyễn Văn Cừ Nối Dài, Ninh Kiều, Cần Thơ
-- Giờ mở cửa: 8:30 - 20:30
+- Giờ mở cửa: 8:00 - 20:30
 
 Dưới đây là dữ liệu từ hệ thống:
 

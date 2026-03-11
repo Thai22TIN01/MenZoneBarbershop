@@ -64,7 +64,7 @@ export default function Footer() {
           </h4>
           <p className="text-gray-400">Thứ 2 - Chủ Nhật</p>
           <p className="gold mt-2 tracking-widest">
-            8:30 – 20:30
+            8:00 – 20:30
           </p>
         </div>
       </div>
