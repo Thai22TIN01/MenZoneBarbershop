@@ -7,5 +7,27 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     allowedHosts: ['khoabarbershop.com'],
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/appointments': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/booking': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/login': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/register': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 })

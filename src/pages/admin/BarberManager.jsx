@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import API_BASE from "../../config";
 
-const API_URL = "http://localhost:3001/api/barbers";
+const API_URL = `${API_BASE}/api/barbers`;
+const API_TOP_BARBERS = `${API_BASE}/api/barbers/top`;
 
-export default function BarberManager({ topBarbers = [] }) {
+export default function BarberManager() {
   const [barbers, setBarbers] = useState([]);
+  const [topBarbers, setTopBarbers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -19,7 +22,18 @@ export default function BarberManager({ topBarbers = [] }) {
 
   useEffect(() => {
     fetchBarbers();
+    fetchTopBarbers();
   }, []);
+
+  const fetchTopBarbers = async () => {
+    try {
+      const res = await axios.get(API_TOP_BARBERS);
+      setTopBarbers(res.data || []);
+    } catch (err) {
+      console.error("Error fetching top barbers:", err);
+      setTopBarbers([]);
+    }
+  };
 
   const fetchBarbers = async () => {
     try {
@@ -67,6 +81,7 @@ export default function BarberManager({ topBarbers = [] }) {
       setError(null);
       await axios.delete(`${API_URL}/${id}`);
       setBarbers(barbers.filter((b) => b.id !== id));
+      await fetchTopBarbers();
       alert("Xóa thành công");
     } catch (err) {
       const msg = err.response?.data?.message || "Lỗi khi xóa";
@@ -117,11 +132,13 @@ export default function BarberManager({ topBarbers = [] }) {
             b.id === editingBarber.id ? res.data : b
           )
         );
+        await fetchTopBarbers();
         alert("Cập nhật thành công");
       } else {
         const res = await axios.post(API_URL, payload);
         const newBarber = res.data;
         setBarbers([...barbers, newBarber]);
+        await fetchTopBarbers();
         alert("Thêm thành công");
       }
       setShowModal(false);
@@ -200,9 +217,7 @@ export default function BarberManager({ topBarbers = [] }) {
     <div className="p-4 sm:p-6 lg:p-8">
       {/* HEADER: Tiêu đề + Top thợ */}
       <div className="flex flex-col lg:flex-row items-start justify-between gap-4 mb-6">
-        <div className="admin-title-box inline-block">
-          <h1 className="text-3xl uppercase admin-title-text">QUẢN LÝ THỢ CẮT TÓC</h1>
-        </div>
+        <h1 className="admin-tab mb-0">Quản lý thợ cắt tóc</h1>
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 w-full lg:w-[320px] shrink-0">
           <p className="text-zinc-400 mb-3 text-sm">Top thợ được đặt nhiều nhất</p>
           {topBarbers.length === 0 ? (
@@ -226,7 +241,7 @@ export default function BarberManager({ topBarbers = [] }) {
           <span>{error}</span>
           <div className="flex gap-2">
             <button
-              onClick={fetchBarbers}
+              onClick={() => { fetchBarbers(); fetchTopBarbers(); }}
               className="px-2 py-1 bg-zinc-700 rounded hover:bg-zinc-600 text-white text-xs"
             >
               Thử lại

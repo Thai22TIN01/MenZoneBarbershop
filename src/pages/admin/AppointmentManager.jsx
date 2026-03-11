@@ -1,12 +1,8 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import API_BASE from "../../config";
 
-export default function AppointmentManager({
-  revenue = 0,
-  revenueFilter = "day",
-  setRevenueFilter = () => {},
-  revenueLoading = false,
-}) {
+export default function AppointmentManager() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -29,7 +25,7 @@ export default function AppointmentManager({
     try {
       setLoading(true);
 
-      const res = await axios.get("http://localhost:3001/appointments");
+      const res = await axios.get(`${API_BASE}/appointments`);
 
       const formatted = res.data.map((item) => ({
         id: item.Id,
@@ -110,7 +106,7 @@ export default function AppointmentManager({
       }
 
       // Call real API endpoint to update appointment status with parsed integer ID
-      await axios.patch(`http://localhost:3001/appointments/${appointmentId}`, { status: newStatus });
+      await axios.patch(`${API_BASE}/appointments/${appointmentId}`, { status: newStatus });
       
       // After successful API call, refetch appointments to get latest data from DB
       await fetchAppointments();
@@ -189,36 +185,7 @@ export default function AppointmentManager({
 
   return (
     <div className="p-8 w-full">
-      {/* HEADER: Tiêu đề | Doanh thu */}
-      <div className="flex items-start justify-between mb-2">
-        <div className="admin-title-box">
-          <h1 className="text-3xl uppercase admin-title-text">QUẢN LÝ LỊCH HẸN</h1>
-        </div>
-        <div className="revenue-card flex-1 min-w-0 max-w-[45rem] ml-auto px-8 py-6 flex flex-col items-center text-center">
-          <p className="text-zinc-400 text-lg">Doanh thu</p>
-          <p className="text-3xl font-bold text-[#d4a441] mt-2">
-            {revenueLoading ? "..." : `${(revenue ?? 0).toLocaleString("vi-VN")}đ`}
-          </p>
-          <div className="flex gap-3 mt-4 justify-center">
-            <button
-              onClick={() => setRevenueFilter("day")}
-              className={`px-5 py-2 rounded text-base ${
-                revenueFilter === "day" ? "bg-[#d4a441] text-black" : "bg-zinc-800 text-white"
-              }`}
-            >
-              Ngày
-            </button>
-            <button
-              onClick={() => setRevenueFilter("month")}
-              className={`px-5 py-2 rounded text-base ${
-                revenueFilter === "month" ? "bg-[#d4a441] text-black" : "bg-zinc-800 text-white"
-              }`}
-            >
-              Tháng
-            </button>
-          </div>
-        </div>
-      </div>
+      <h1 className="admin-tab mb-6">Quản lý lịch hẹn</h1>
 
       {/* Filter + TABLE */}
       <div className="flex items-center justify-between mb-2">

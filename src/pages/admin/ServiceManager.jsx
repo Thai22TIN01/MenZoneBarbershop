@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import API_BASE from "../../config";
 
-const API_SERVICES = "http://localhost:3001/api/services";
+const API_SERVICES = `${API_BASE}/api/services`;
+const API_TOP_SERVICES = `${API_BASE}/api/services/top`;
 
-export default function ServiceManager({ topServices = [], className = "" }) {
+export default function ServiceManager({ className = "" }) {
   const [services, setServices] = useState([]);
+  const [topServices, setTopServices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -17,7 +20,18 @@ export default function ServiceManager({ topServices = [], className = "" }) {
 
   useEffect(() => {
     fetchServices();
+    fetchTopServices();
   }, []);
+
+  const fetchTopServices = async () => {
+    try {
+      const res = await axios.get(API_TOP_SERVICES);
+      setTopServices(res.data || []);
+    } catch (err) {
+      console.error("Error fetching top services:", err);
+      setTopServices([]);
+    }
+  };
 
   const fetchServices = async () => {
     try {
@@ -32,6 +46,11 @@ export default function ServiceManager({ topServices = [], className = "" }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = () => {
+    fetchServices();
+    fetchTopServices();
   };
 
   const handleAdd = () => {
@@ -82,6 +101,7 @@ export default function ServiceManager({ topServices = [], className = "" }) {
       } else {
         await axios.post(API_SERVICES, payload);
         await fetchServices();
+        await fetchTopServices();
         alert("Thêm thành công");
       }
       setShowModal(false);
@@ -106,7 +126,7 @@ export default function ServiceManager({ topServices = [], className = "" }) {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={fetchServices}
+            onClick={handleRefresh}
             disabled={loading}
             className="px-4 py-2 bg-zinc-800 border border-zinc-700 text-white rounded-lg hover:bg-zinc-700 transition-colors disabled:opacity-50"
           >

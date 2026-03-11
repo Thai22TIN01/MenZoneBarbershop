@@ -35,7 +35,7 @@ export default function App() {
 
         {/* 🔐 Trang quản trị (CHỈ ADMIN) */}
         <Route
-          path="/admin"
+          path="/admin/*"
           element={
             <AdminRoute>
               <Admin />
