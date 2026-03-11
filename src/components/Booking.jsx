@@ -2,7 +2,11 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { flushSync } from "react-dom";
 
-const API_SERVICES = "http://localhost:3001/api/services";
+import API_BASE from "../config";
+
+const API_SERVICES = `${API_BASE}/api/services`;
+const API_BARBERS = `${API_BASE}/api/barbers`;
+const API_BOOKING = `${API_BASE}/api/booking`;
 
 const times = [
   "08:00","08:30","09:00","09:30","10:00","10:30",
@@ -10,19 +14,6 @@ const times = [
   "16:00","16:30","17:00","17:30","18:00","18:30",
   "19:00","19:30","20:00",
 ];
-
-// Danh sách thợ hardcode (Id 1-3: cơ bản, 4-5: trẻ trung)
-const BARBERS = [
-  { id: 1, BarberName: "Nguyễn Hoàng Phong", Phone: "0901234567" },
-  { id: 2, BarberName: "Trần Minh Tuấn", Phone: "0912345678" },
-  { id: 3, BarberName: "Lê Xuân Vũ", Phone: "0923456789" },
-  { id: 4, BarberName: "Nguyễn Minh Quý", Phone: "0934567890" },
-  { id: 5, BarberName: "Trần Minh Hiếu", Phone: "0945678901" },
-];
-const GROUP_TRADITIONAL_IDS = [1, 2, 3];
-const GROUP_YOUTHFUL_IDS = [4, 5];
-
-const pickRandomFromGroup = (ids) => ids[Math.floor(Math.random() * ids.length)];
 
 // Helper: tạo đối tượng Date từ ngày (YYYY-MM-DD) và giờ (HH:mm) theo giờ local
 const createDateTime = (dateStr, timeStr) => {
@@ -57,10 +48,9 @@ const getNowInVietnam = () => {
   };
 };
 
-// Helper: kiểm tra slot có bị disable không
+// Helper: kiểm tra slot có bị disable không (quá khứ / đã qua)
 // - Nếu ngày chọn KHÔNG phải hôm nay → tất cả giờ enabled
 // - Nếu ngày chọn là hôm nay: min slot = now + 30 phút, làm tròn lên slot 30p tiếp theo
-//   Ví dụ: 15:16 → min 16:00; 15:30 → min 16:00; 15:31→15:59 → min 16:30
 const isTimeSlotDisabled = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return false;
 
@@ -89,8 +79,11 @@ export default function Booking({ onNext, disabled = false, initialData = null }
   const [selectedServices, setSelectedServices] = useState([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
-  const [selectedStyleType, setSelectedStyleType] = useState(null);
   const [selectedBarberId, setSelectedBarberId] = useState(null);
+  const [barbers, setBarbers] = useState([]);
+  const [barbersLoading, setBarbersLoading] = useState(true);
+  const [occupiedSlots, setOccupiedSlots] = useState([]);
+  const [occupiedBarberIds, setOccupiedBarberIds] = useState([]);
   const dateRef = useRef(null);
 
   useEffect(() => {
@@ -114,14 +107,31 @@ export default function Booking({ onNext, disabled = false, initialData = null }
       .finally(() => setServicesLoading(false));
   }, []);
 
-  const handleSelectStyle = (type) => {
-    if (disabled) return;
-    const barberId = type === "traditional"
-      ? pickRandomFromGroup(GROUP_TRADITIONAL_IDS)
-      : pickRandomFromGroup(GROUP_YOUTHFUL_IDS);
-    setSelectedStyleType(type);
-    setSelectedBarberId(barberId);
-  };
+  useEffect(() => {
+    fetch(API_BARBERS)
+      .then((res) => res.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setBarbers(
+          list
+            .filter((b) => {
+              const status = (b.Status ?? b.status ?? "Active").toLowerCase();
+              return status === "active";
+            })
+            .map((b) => ({
+              id: b.id ?? b.Id,
+              BarberName: b.BarberName ?? b.name ?? "",
+              Phone: b.Phone ?? b.phone ?? "",
+            }))
+            .filter((b) => b.id && b.BarberName)
+        );
+      })
+      .catch((err) => {
+        console.error("Error fetching barbers:", err);
+        setBarbers([]);
+      })
+      .finally(() => setBarbersLoading(false));
+  }, []);
 
   // Hydrate state from initialData prop when component mounts or when returning to booking step
   useEffect(() => {
@@ -137,17 +147,11 @@ export default function Booking({ onNext, disabled = false, initialData = null }
       if (initialData.time) setSelectedTime(initialData.time);
       if (initialData.barberId != null) {
         setSelectedBarberId(initialData.barberId);
-        const bid = initialData.barberId;
-        setSelectedStyleType(
-          GROUP_TRADITIONAL_IDS.includes(bid) ? "traditional" :
-          GROUP_YOUTHFUL_IDS.includes(bid) ? "youthful" : null
-        );
       }
     } else {
       setSelectedServices([]);
       setSelectedDate("");
       setSelectedTime("");
-      setSelectedStyleType(null);
       setSelectedBarberId(null);
     }
   }, [initialData, services]);
@@ -158,6 +162,43 @@ export default function Booking({ onNext, disabled = false, initialData = null }
       setSelectedTime("");
     }
   }, [selectedDate]);
+
+  // Lấy các khung giờ thợ đã có lịch khi chọn thợ + ngày
+  useEffect(() => {
+    if (!selectedBarberId || !selectedDate) {
+      setOccupiedSlots([]);
+      return;
+    }
+    fetch(`${API_BARBERS}/${selectedBarberId}/occupied-slots?date=${selectedDate}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const slots = Array.isArray(data) ? data : [];
+        setOccupiedSlots(slots);
+        if (selectedTime && slots.includes(selectedTime)) {
+          setSelectedTime("");
+        }
+      })
+      .catch(() => setOccupiedSlots([]));
+  }, [selectedBarberId, selectedDate]);
+
+  // Lấy thợ đã có lịch tại khung giờ đã chọn (để làm mờ thợ không chọn được)
+  useEffect(() => {
+    if (!selectedDate || !selectedTime) {
+      setOccupiedBarberIds([]);
+      return;
+    }
+    const timePart = String(selectedTime).slice(0, 5);
+    fetch(`${API_BOOKING}/occupied-barbers?date=${selectedDate}&time=${timePart}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const ids = Array.isArray(data) ? data.map((id) => Number(id)).filter((n) => !isNaN(n)) : [];
+        setOccupiedBarberIds(ids);
+        if (selectedBarberId && ids.includes(Number(selectedBarberId))) {
+          setSelectedBarberId(null);
+        }
+      })
+      .catch(() => setOccupiedBarberIds([]));
+  }, [selectedDate, selectedTime]);
 
   const toggleService = (service) => {
     setSelectedServices((prev) =>
@@ -388,83 +429,71 @@ export default function Booking({ onNext, disabled = false, initialData = null }
           <div className="grid grid-cols-4 md:grid-cols-7 gap-4">
             {times.map((t) => {
               const slotDisabled = isTimeSlotDisabled(selectedDate, t);
+              const slotOccupied = selectedBarberId && occupiedSlots.includes(t);
+              const isDisabled = slotDisabled || slotOccupied;
               return (
                 <button
                   key={t}
                   onClick={() =>
-                    !disabled && !slotDisabled && setSelectedTime(t)
+                    !disabled && !isDisabled && setSelectedTime(t)
                   }
-                  disabled={disabled || slotDisabled}
+                  disabled={disabled || isDisabled}
+                  title={slotOccupied ? "Thợ đã có lịch vào khung giờ này" : ""}
                   className={`border px-3 py-2 text-xs lg:text-sm transition
                   ${
-                    selectedTime === t && !slotDisabled
+                    selectedTime === t && !isDisabled
                       ? "bg-[#d4a441] text-black"
-                      : slotDisabled
+                      : isDisabled
                         ? "border-white/10 text-gray-500 bg-gray-700 opacity-50 cursor-not-allowed"
                         : "border-white/20 text-white"
                   }
                   ${
-                    disabled || slotDisabled
+                    disabled || isDisabled
                       ? "cursor-not-allowed opacity-50"
                       : "hover:border-[#d4a441]"
                   }`}
                 >
                   {t}
+                  {slotOccupied && (
+                    <span className="block text-[10px] text-red-400 mt-0.5">Đã đặt</span>
+                  )}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* 4. Chọn kiểu tóc → thợ ngẫu nhiên */}
+        {/* 4. Chọn thợ cắt tóc */}
         <div className="mb-10">
           <h3 className="text-xl lg:text-2xl font-semibold mb-6">
-            4. Chọn Kiểu Tóc
+            4. Chọn Thợ Cắt Tóc
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            <button
-              type="button"
-              onClick={() => handleSelectStyle("traditional")}
-              disabled={disabled}
-              className={`w-full py-6 px-6 text-center border-2 transition-all rounded-lg
-                ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
-                ${selectedStyleType === "traditional"
-                  ? "border-yellow-500 bg-yellow-500 text-black"
-                  : "border-white/20 text-white hover:border-[#d4a441]/60"}`}
-            >
-              <span className="block text-base lg:text-lg font-semibold">
-                Cơ bản, truyền thống
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectStyle("youthful")}
-              disabled={disabled}
-              className={`w-full py-6 px-6 text-center border-2 transition-all rounded-lg
-                ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
-                ${selectedStyleType === "youthful"
-                  ? "border-yellow-500 bg-yellow-500 text-black"
-                  : "border-white/20 text-white hover:border-[#d4a441]/60"}`}
-            >
-              <span className="block text-base lg:text-lg font-semibold">
-                Trẻ trung, năng động
-              </span>
-            </button>
-          </div>
-
+          {barbersLoading ? (
+            <div className="py-6 text-center text-gray-400">Đang tải danh sách thợ...</div>
+          ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {BARBERS.map((barber) => {
+            {barbers.map((barber) => {
               const name = barber.BarberName ?? barber.name ?? "";
               const phone = barber.Phone ?? barber.phone ?? "";
               const isSelected = selectedBarberId === barber.id;
+              const isOccupied = selectedDate && selectedTime && occupiedBarberIds.includes(Number(barber.id));
+              const isDisabled = disabled || isOccupied;
               return (
                 <div
                   key={barber.id}
+                  onClick={() => !isDisabled && setSelectedBarberId(barber.id)}
+                  title={isOccupied ? "Thợ đã có lịch vào khung giờ này" : ""}
                   className={`relative border p-4 transition-all
-                    ${isSelected ? "border-[#d4a441] bg-[#d4a441]/10" : "border-white/10 opacity-70"}`}
+                    ${isDisabled ? "cursor-not-allowed opacity-40" : "cursor-pointer"}
+                    ${isOccupied ? "opacity-50 grayscale" : ""}
+                    ${isSelected ? "border-[#d4a441] bg-[#d4a441]/10" : "border-white/10 opacity-70 hover:border-[#d4a441]/60"}
+                    ${!isDisabled ? "hover:opacity-100" : ""}`}
                 >
-                  {isSelected && (
+                  {isOccupied && (
+                    <span className="absolute top-2 right-2 text-[10px] text-red-400 font-medium">Đã có lịch</span>
+                  )}
+                  {isSelected && !isOccupied && (
                     <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[#d4a441] flex items-center justify-center">
                       <span className="text-black text-xs">✓</span>
                     </div>
@@ -477,6 +506,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Thông tin */}
@@ -506,8 +536,8 @@ export default function Booking({ onNext, disabled = false, initialData = null }
             <span className="text-gray-400">Thợ cắt tóc:</span>{" "}
             <span className="gold">
               {selectedBarberId != null
-                ? (BARBERS.find((b) => b.id === selectedBarberId)?.BarberName ??
-                    BARBERS.find((b) => b.id === selectedBarberId)?.name ??
+                ? (barbers.find((b) => b.id === selectedBarberId)?.BarberName ??
+                    barbers.find((b) => b.id === selectedBarberId)?.name ??
                     "---")
                 : "---"}
             </span>

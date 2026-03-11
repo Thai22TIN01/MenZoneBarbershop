@@ -471,6 +471,40 @@ async function getRandomActiveBarberId(pool) {
   }
 }
 
+// GET /api/booking/occupied-barbers?date=YYYY-MM-DD&time=HH:mm - Thợ đã có lịch tại khung giờ này
+app.get("/api/booking/occupied-barbers", async (req, res) => {
+  try {
+    const date = req.query.date;
+    const time = req.query.time;
+    if (!date || !time || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}/.test(time)) {
+      return res.status(400).json({ message: "Thiếu date (yyyy-MM-dd) hoặc time (HH:mm)" });
+    }
+    const timePart = String(time).slice(0, 5);
+    const pool = await connectDB();
+    await ensureAppointmentsTable(pool);
+    await ensureAppointmentsBarberIdColumn(pool);
+    const result = await pool
+      .request()
+      .input("dateStr", sql.VarChar(10), date)
+      .input("timeStr", sql.VarChar(5), timePart)
+      .query(`
+        SELECT BarberId FROM Appointments
+        WHERE BarberId IS NOT NULL
+          AND Status NOT IN ('cancelled')
+          AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(@dateStr AS DATE)
+          AND CONVERT(VARCHAR(5), DATEADD(hour, 7, AppointmentTime), 108) = @timeStr
+      `);
+    const barberIds = (result.recordset || [])
+      .map((r) => r.BarberId)
+      .filter((id) => id != null && !isNaN(Number(id)))
+      .map((id) => Number(id));
+    res.json(barberIds);
+  } catch (err) {
+    console.error("❌ Error fetching occupied barbers:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
+
 // ===== API TẠO ĐẶT LỊCH + GỬI MAIL XÁC NHẬN THẬT =====
 app.post("/booking", async (req, res) => {
   console.log("📥 POST /booking:", req.body);
@@ -1781,6 +1815,39 @@ app.get("/api/barbers/top", async (req, res) => {
   } catch (err) {
     console.error("❌ Error fetching top barbers:", err.message);
     res.status(500).json({ message: "Lỗi server khi tải top thợ" });
+  }
+});
+
+// GET /api/barbers/:id/occupied-slots?date=YYYY-MM-DD - Các khung giờ thợ đã có lịch
+app.get("/api/barbers/:id/occupied-slots", async (req, res) => {
+  try {
+    const barberId = parseInt(req.params.id, 10);
+    const date = req.query.date;
+    if (!barberId || isNaN(barberId) || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ message: "Thiếu barberId hoặc date (yyyy-MM-dd)" });
+    }
+    const pool = await connectDB();
+    await ensureAppointmentsTable(pool);
+    await ensureAppointmentsBarberIdColumn(pool);
+    const result = await pool
+      .request()
+      .input("barberId", sql.Int, barberId)
+      .input("dateStr", sql.VarChar(10), date)
+      .query(`
+        SELECT CONVERT(VARCHAR(5), DATEADD(hour, 7, AppointmentTime), 108) AS TimeSlot
+        FROM Appointments
+        WHERE BarberId = @barberId
+          AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(@dateStr AS DATE)
+          AND Status NOT IN ('cancelled')
+      `);
+    const slots = (result.recordset || []).map((r) => {
+      const t = r.TimeSlot || "";
+      return t.length >= 5 ? t.slice(0, 5) : t;
+    }).filter(Boolean);
+    res.json(slots);
+  } catch (err) {
+    console.error("❌ Error fetching occupied slots:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 });
 

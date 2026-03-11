@@ -21,6 +21,9 @@ export default function App() {
     location.pathname === "/login" ||
     location.pathname.startsWith("/admin");
 
+  // Ẩn chatbot ở trang quản trị
+  const hideChatbot = location.pathname.startsWith("/admin");
+
   return (
     <>
       <Header />
@@ -46,7 +49,7 @@ export default function App() {
 
       {!hideFooter && <Footer />}
 
-      <Chatbot />
+      {!hideChatbot && <Chatbot />}
     </>
   );
 }
