@@ -84,7 +84,8 @@ export default function Admin() {
     const fetchRevenue = async () => {
       setRevenueLoading(true);
       try {
-        const endpoint = revenueFilter === "day" ? "today" : revenueFilter;
+        const endpointMap = { day: "today", month: "month" };
+        const endpoint = endpointMap[revenueFilter] || "today";
         const res = await axios.get(`${API_REVENUE}/${endpoint}`);
         setRevenue(res.data?.revenue ?? 0);
       } catch (err) {

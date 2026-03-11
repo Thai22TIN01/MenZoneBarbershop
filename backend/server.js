@@ -883,6 +883,7 @@ app.get('/api/vnpay/vnpay_return', async function (req, res, next) {
 app.get("/api/revenue/range", async (req, res) => {
   try {
     let { startDate, endDate } = req.query;
+    console.log("[Revenue range] Received:", { startDate, endDate });
     if (!startDate || !endDate) {
       return res.status(400).json({ message: "Thiếu startDate hoặc endDate" });
     }

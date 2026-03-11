@@ -10,10 +10,6 @@ export default function AppointmentManager({
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [filteredRevenue, setFilteredRevenue] = useState(null);
-  const [dateFilterLoading, setDateFilterLoading] = useState(false);
 
   useEffect(() => {
     const fn = async () => {
@@ -183,34 +179,6 @@ export default function AppointmentManager({
 
   const getAptDateStr = (apt) => getDateFromISO(apt?.time);
 
-  const toYYYYMMDD = (val) => {
-    if (!val) return "";
-    const v = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-    const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-    const d = new Date(v);
-    return !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : v;
-  };
-
-  const handleDateFilter = async () => {
-    if (!fromDate || !toDate) return;
-    const start = toYYYYMMDD(fromDate);
-    const end = toYYYYMMDD(toDate);
-    setDateFilterLoading(true);
-    try {
-      const res = await axios.get("http://localhost:3001/api/revenue/range", {
-        params: { startDate: start, endDate: end },
-      });
-      setFilteredRevenue(res.data?.revenue ?? 0);
-    } catch (err) {
-      console.error("Error fetching revenue by date range:", err);
-      setFilteredRevenue(0);
-    } finally {
-      setDateFilterLoading(false);
-    }
-  };
-
   const filteredAppointments = appointments.filter((apt) => {
     if (filterStatus === "all") return true;
     if (filterStatus === "today") return getAptDateStr(apt) === todayStr;
@@ -229,62 +197,24 @@ export default function AppointmentManager({
         <div className="revenue-card flex-1 min-w-0">
           <p className="text-zinc-400 text-sm">Doanh thu</p>
           <p className="text-xl font-bold text-[#d4a441] mt-1">
-            {dateFilterLoading
-              ? "..."
-              : filteredRevenue !== null
-                ? `${(filteredRevenue ?? 0).toLocaleString("vi-VN")}đ`
-                : revenueLoading
-                  ? "..."
-                  : `${(revenue ?? 0).toLocaleString("vi-VN")}đ`}
+            {revenueLoading ? "..." : `${(revenue ?? 0).toLocaleString("vi-VN")}đ`}
           </p>
           <div className="flex gap-2 mt-3">
             <button
-              onClick={() => {
-                setFilteredRevenue(null);
-                setRevenueFilter("day");
-              }}
+              onClick={() => setRevenueFilter("day")}
               className={`px-3 py-1 rounded text-sm ${
-                revenueFilter === "day" && filteredRevenue === null
-                  ? "bg-[#d4a441] text-black"
-                  : "bg-zinc-800 text-white"
+                revenueFilter === "day" ? "bg-[#d4a441] text-black" : "bg-zinc-800 text-white"
               }`}
             >
               Ngày
             </button>
             <button
-              onClick={() => {
-                setFilteredRevenue(null);
-                setRevenueFilter("month");
-              }}
+              onClick={() => setRevenueFilter("month")}
               className={`px-3 py-1 rounded text-sm ${
-                revenueFilter === "month" && filteredRevenue === null
-                  ? "bg-[#d4a441] text-black"
-                  : "bg-zinc-800 text-white"
+                revenueFilter === "month" ? "bg-[#d4a441] text-black" : "bg-zinc-800 text-white"
               }`}
             >
               Tháng
-            </button>
-          </div>
-          <div className="flex items-center gap-3 mt-3">
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="bg-zinc-800 text-white px-3 py-1 rounded border border-zinc-700 text-sm"
-            />
-            <span className="text-zinc-400">→</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="bg-zinc-800 text-white px-3 py-1 rounded border border-zinc-700 text-sm"
-            />
-            <button
-              onClick={handleDateFilter}
-              disabled={dateFilterLoading}
-              className="px-3 py-1 bg-[#d4a441] text-black rounded text-sm disabled:opacity-60"
-            >
-              {dateFilterLoading ? "..." : "Lọc"}
             </button>
           </div>
         </div>
