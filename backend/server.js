@@ -66,17 +66,7 @@ app.get("/", (req, res) => {
   res.send("✅ Backend MenZone đang chạy");
 });
 
-// ===== API CHATBOT (Google Gemini) =====
-const CHATBOT_SYSTEM_PROMPT = `Bạn là chatbot hỗ trợ khách hàng của MenZone Barbershop tại Cần Thơ.
-
-Thông tin tiệm:
-- Giờ mở cửa: 8:30 - 20:30
-- Địa chỉ: 84 Nguyễn Văn Cừ Nối Dài, An Bình, Ninh Kiều, Cần Thơ
-- Dịch vụ: cắt tóc nam, uốn tóc, nhuộm tóc
-- Website có chức năng đặt lịch online
-
-Hãy trả lời khách hàng ngắn gọn, thân thiện, dễ hiểu.`;
-
+// ===== API CHATBOT (Google Gemini + Context từ DB) =====
 app.post("/api/chatbot", async (req, res) => {
   try {
     const { message } = req.body;
@@ -90,13 +80,68 @@ app.post("/api/chatbot", async (req, res) => {
       return res.status(500).json({ reply: "Chatbot tạm thời không khả dụng. Vui lòng thử lại sau." });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const pool = await connectDB();
+    await ensureServicesTable();
+    await ensureBarbersTable();
 
-    const fullPrompt = `${CHATBOT_SYSTEM_PROMPT}\n\nKhách hàng: ${message.trim()}\n\nTrả lời:`;
-    const result = await model.generateContent(fullPrompt);
-    const response = result.response;
-    const text = response.text ? response.text().trim() : "Xin lỗi, tôi không thể xử lý câu hỏi này. Bạn vui lòng thử lại.";
+    let servicesContext = "Không có dữ liệu dịch vụ.";
+    let barbersContext = "Không có dữ liệu thợ.";
+
+    try {
+      const servicesResult = await pool.request().query(`
+        SELECT ServiceName, Price, Duration FROM Services ORDER BY Id ASC
+      `);
+      const servicesRows = servicesResult.recordset || [];
+      if (servicesRows.length > 0) {
+        servicesContext = servicesRows
+          .map(
+            (r) =>
+              `* ${r.ServiceName ?? ""}: ${Number(r.Price ?? 0).toLocaleString("vi-VN")} VNĐ (${r.Duration ?? 0} phút)`
+          )
+          .join("\n");
+      }
+    } catch (e) {
+      console.error("❌ Chatbot: Error fetching Services:", e.message);
+    }
+
+    try {
+      const barbersResult = await pool.request().query(`
+        SELECT BarberName, Status FROM Barbers ORDER BY Id ASC
+      `);
+      const barbersRows = barbersResult.recordset || [];
+      if (barbersRows.length > 0) {
+        barbersContext = barbersRows
+          .map((r) => `* ${r.BarberName ?? ""} (${r.Status ?? "Active"})`)
+          .join("\n");
+      }
+    } catch (e) {
+      console.error("❌ Chatbot: Error fetching Barbers:", e.message);
+    }
+
+    const prompt = `Bạn là chatbot hỗ trợ khách hàng của MenZone Barbershop tại Cần Thơ.
+
+Thông tin tiệm:
+- Địa chỉ: 84 Nguyễn Văn Cừ Nối Dài, Ninh Kiều, Cần Thơ
+- Giờ mở cửa: 8:30 - 20:30
+
+Dưới đây là dữ liệu từ hệ thống:
+
+DỊCH VỤ MENZONE:
+${servicesContext}
+
+DANH SÁCH THỢ:
+${barbersContext}
+
+Hãy trả lời câu hỏi của khách hàng dựa trên dữ liệu trên.
+Nếu câu hỏi không liên quan, hãy trả lời lịch sự và hướng khách đến việc đặt lịch cắt tóc.
+
+Câu hỏi của khách:
+"${message.trim()}"`;
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = result.response?.text ? result.response.text().trim() : "Xin lỗi, tôi không thể xử lý câu hỏi này. Bạn vui lòng thử lại.";
 
     res.json({ reply: text });
   } catch (err) {
