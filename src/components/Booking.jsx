@@ -181,14 +181,16 @@ export default function Booking({ onNext, disabled = false, initialData = null }
       .catch(() => setOccupiedSlots([]));
   }, [selectedBarberId, selectedDate]);
 
-  // Lấy thợ đã có lịch tại khung giờ đã chọn (để làm mờ thợ không chọn được)
+  // Lấy thợ đã có lịch trùng [time, time+duration) (để làm mờ thợ không chọn được)
+  const totalTime = selectedServices.reduce((t, s) => t + s.duration, 0);
   useEffect(() => {
     if (!selectedDate || !selectedTime) {
       setOccupiedBarberIds([]);
       return;
     }
     const timePart = String(selectedTime).slice(0, 5);
-    fetch(`${API_BOOKING}/occupied-barbers?date=${selectedDate}&time=${timePart}`)
+    const dur = totalTime || 30;
+    fetch(`${API_BOOKING}/occupied-barbers?date=${selectedDate}&time=${timePart}&duration=${dur}`)
       .then((res) => res.json())
       .then((data) => {
         const ids = Array.isArray(data) ? data.map((id) => Number(id)).filter((n) => !isNaN(n)) : [];
@@ -198,7 +200,7 @@ export default function Booking({ onNext, disabled = false, initialData = null }
         }
       })
       .catch(() => setOccupiedBarberIds([]));
-  }, [selectedDate, selectedTime]);
+  }, [selectedDate, selectedTime, totalTime]);
 
   const toggleService = (service) => {
     setSelectedServices((prev) =>
@@ -208,7 +210,6 @@ export default function Booking({ onNext, disabled = false, initialData = null }
     );
   };
 
-  const totalTime = selectedServices.reduce((t, s) => t + s.duration, 0);
   const totalPrice = selectedServices.reduce((t, s) => t + s.price, 0);
 
   // isComplete chỉ dùng để hiển thị UI (disabled state), không dùng để validation

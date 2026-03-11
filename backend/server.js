@@ -471,28 +471,32 @@ async function getRandomActiveBarberId(pool) {
   }
 }
 
-// GET /api/booking/occupied-barbers?date=YYYY-MM-DD&time=HH:mm - Thợ đã có lịch tại khung giờ này
+// GET /api/booking/occupied-barbers?date=YYYY-MM-DD&time=HH:mm&duration=M - Thợ có lịch overlap [time, time+duration)
 app.get("/api/booking/occupied-barbers", async (req, res) => {
   try {
     const date = req.query.date;
     const time = req.query.time;
+    const duration = parseInt(req.query.duration, 10) || 0;
     if (!date || !time || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}/.test(time)) {
       return res.status(400).json({ message: "Thiếu date (yyyy-MM-dd) hoặc time (HH:mm)" });
     }
     const timePart = String(time).slice(0, 5);
+    const slotStart = `${date} ${timePart}:00`;
+    const slotEndMins = duration > 0 ? duration : 30;
     const pool = await connectDB();
     await ensureAppointmentsTable(pool);
     await ensureAppointmentsBarberIdColumn(pool);
     const result = await pool
       .request()
-      .input("dateStr", sql.VarChar(10), date)
-      .input("timeStr", sql.VarChar(5), timePart)
+      .input("slotStart", sql.DateTime, slotStart)
+      .input("slotEndMins", sql.Int, slotEndMins)
       .query(`
         SELECT BarberId FROM Appointments
         WHERE BarberId IS NOT NULL
           AND Status NOT IN ('cancelled')
-          AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(@dateStr AS DATE)
-          AND CONVERT(VARCHAR(5), DATEADD(hour, 7, AppointmentTime), 108) = @timeStr
+          AND CAST(AppointmentTime AS DATE) = CAST(@slotStart AS DATE)
+          AND AppointmentTime < DATEADD(minute, @slotEndMins, @slotStart)
+          AND DATEADD(minute, ISNULL(TotalDuration, 0), AppointmentTime) > @slotStart
       `);
     const barberIds = (result.recordset || [])
       .map((r) => r.BarberId)
@@ -555,20 +559,22 @@ app.post("/booking", async (req, res) => {
 
     const appointmentDateTime = `${date} ${time}:00`;
 
-    // Kiểm tra trùng lịch: thợ đã có lịch vào thời gian này chưa?
+    // Kiểm tra trùng lịch: thợ có lịch overlap với [start, start+duration) không?
     const conflictCheck = await pool
       .request()
       .input("barberId", sql.Int, barberId)
       .input("appointmentTime", sql.DateTime, appointmentDateTime)
+      .input("duration", sql.Int, finalTotalDuration || 0)
       .query(`
         SELECT Id FROM Appointments
         WHERE BarberId = @barberId
-          AND AppointmentTime = @appointmentTime
           AND Status NOT IN ('cancelled')
+          AND AppointmentTime < DATEADD(minute, @duration, @appointmentTime)
+          AND DATEADD(minute, ISNULL(TotalDuration, 0), AppointmentTime) > @appointmentTime
       `);
     if (conflictCheck.recordset.length > 0) {
       return res.status(400).json({
-        message: "Thợ đã có lịch vào thời gian này",
+        message: "Thợ đã có lịch trùng khung giờ. Vui lòng chọn thời gian khác.",
       });
     }
 
@@ -1818,7 +1824,7 @@ app.get("/api/barbers/top", async (req, res) => {
   }
 });
 
-// GET /api/barbers/:id/occupied-slots?date=YYYY-MM-DD - Các khung giờ thợ đã có lịch
+// GET /api/barbers/:id/occupied-slots?date=YYYY-MM-DD - Các khung giờ thợ đã có lịch (bao gồm overlap theo duration)
 app.get("/api/barbers/:id/occupied-slots", async (req, res) => {
   try {
     const barberId = parseInt(req.params.id, 10);
@@ -1834,16 +1840,18 @@ app.get("/api/barbers/:id/occupied-slots", async (req, res) => {
       .input("barberId", sql.Int, barberId)
       .input("dateStr", sql.VarChar(10), date)
       .query(`
-        SELECT CONVERT(VARCHAR(5), DATEADD(hour, 7, AppointmentTime), 108) AS TimeSlot
-        FROM Appointments
-        WHERE BarberId = @barberId
-          AND CAST(DATEADD(hour, 7, AppointmentTime) AS DATE) = CAST(@dateStr AS DATE)
-          AND Status NOT IN ('cancelled')
+        SELECT DISTINCT CONVERT(VARCHAR(5), DATEADD(minute, 30 * n.n, DATEADD(hour, 7, a.AppointmentTime)), 108) AS TimeSlot
+        FROM Appointments a
+        CROSS JOIN (SELECT TOP 48 n = ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 FROM sys.all_objects) n
+        WHERE a.BarberId = @barberId
+          AND CAST(DATEADD(hour, 7, a.AppointmentTime) AS DATE) = CAST(@dateStr AS DATE)
+          AND a.Status NOT IN ('cancelled')
+          AND 30 * n.n < ISNULL(a.TotalDuration, 0)
       `);
-    const slots = (result.recordset || []).map((r) => {
+    const slots = [...new Set((result.recordset || []).map((r) => {
       const t = r.TimeSlot || "";
       return t.length >= 5 ? t.slice(0, 5) : t;
-    }).filter(Boolean);
+    }).filter(Boolean))];
     res.json(slots);
   } catch (err) {
     console.error("❌ Error fetching occupied slots:", err.message);
