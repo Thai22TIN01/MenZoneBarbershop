@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import AdminRoute from "./components/AdminRoute";
+import Chatbot from "./components/Chatbot";
 
 import Home from "./pages/Home";
 import Register from "./pages/Register";
@@ -44,6 +45,8 @@ export default function App() {
       </Routes>
 
       {!hideFooter && <Footer />}
+
+      <Chatbot />
     </>
   );
 }

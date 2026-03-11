@@ -6,6 +6,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 
@@ -63,6 +64,47 @@ const validateEmail = (email) => {
 // ===== API TEST =====
 app.get("/", (req, res) => {
   res.send("✅ Backend MenZone đang chạy");
+});
+
+// ===== API CHATBOT (Google Gemini) =====
+const CHATBOT_SYSTEM_PROMPT = `Bạn là chatbot hỗ trợ khách hàng của MenZone Barbershop tại Cần Thơ.
+
+Thông tin tiệm:
+- Giờ mở cửa: 8:30 - 20:30
+- Địa chỉ: 84 Nguyễn Văn Cừ Nối Dài, An Bình, Ninh Kiều, Cần Thơ
+- Dịch vụ: cắt tóc nam, uốn tóc, nhuộm tóc
+- Website có chức năng đặt lịch online
+
+Hãy trả lời khách hàng ngắn gọn, thân thiện, dễ hiểu.`;
+
+app.post("/api/chatbot", async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ reply: "Vui lòng nhập tin nhắn." });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("❌ GEMINI_API_KEY chưa được cấu hình trong .env");
+      return res.status(500).json({ reply: "Chatbot tạm thời không khả dụng. Vui lòng thử lại sau." });
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const fullPrompt = `${CHATBOT_SYSTEM_PROMPT}\n\nKhách hàng: ${message.trim()}\n\nTrả lời:`;
+    const result = await model.generateContent(fullPrompt);
+    const response = result.response;
+    const text = response.text ? response.text().trim() : "Xin lỗi, tôi không thể xử lý câu hỏi này. Bạn vui lòng thử lại.";
+
+    res.json({ reply: text });
+  } catch (err) {
+    console.error("❌ Chatbot error:", err.message);
+    res.status(500).json({
+      reply: "Đã xảy ra lỗi. Bạn vui lòng thử lại sau hoặc liên hệ trực tiếp tiệm qua số điện thoại.",
+    });
+  }
 });
 
 // ===== API ĐĂNG KÝ =====
