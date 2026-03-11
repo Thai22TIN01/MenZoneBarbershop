@@ -190,19 +190,19 @@ export default function AppointmentManager({
   return (
     <div className="p-8 w-full">
       {/* HEADER: Tiêu đề | Doanh thu */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-2">
         <div className="admin-title-box">
           <h1 className="text-3xl uppercase admin-title-text">QUẢN LÝ LỊCH HẸN</h1>
         </div>
-        <div className="revenue-card flex-1 min-w-0">
-          <p className="text-zinc-400 text-sm">Doanh thu</p>
-          <p className="text-xl font-bold text-[#d4a441] mt-1">
+        <div className="revenue-card flex-1 min-w-0 max-w-[45rem] ml-auto px-8 py-6 flex flex-col items-center text-center">
+          <p className="text-zinc-400 text-lg">Doanh thu</p>
+          <p className="text-3xl font-bold text-[#d4a441] mt-2">
             {revenueLoading ? "..." : `${(revenue ?? 0).toLocaleString("vi-VN")}đ`}
           </p>
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-3 mt-4 justify-center">
             <button
               onClick={() => setRevenueFilter("day")}
-              className={`px-3 py-1 rounded text-sm ${
+              className={`px-5 py-2 rounded text-base ${
                 revenueFilter === "day" ? "bg-[#d4a441] text-black" : "bg-zinc-800 text-white"
               }`}
             >
@@ -210,7 +210,7 @@ export default function AppointmentManager({
             </button>
             <button
               onClick={() => setRevenueFilter("month")}
-              className={`px-3 py-1 rounded text-sm ${
+              className={`px-5 py-2 rounded text-base ${
                 revenueFilter === "month" ? "bg-[#d4a441] text-black" : "bg-zinc-800 text-white"
               }`}
             >
@@ -221,7 +221,7 @@ export default function AppointmentManager({
       </div>
 
       {/* Filter + TABLE */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-2">
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
